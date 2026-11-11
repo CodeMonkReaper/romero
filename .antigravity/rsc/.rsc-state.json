@@ -1,0 +1,236 @@
+{
+  "skills": {
+    "analyze": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\analyze"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\analyze"
+    },
+    "asdd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\asdd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\asdd"
+    },
+    "automation-strategy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\automation-strategy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\automation-strategy"
+    },
+    "clarify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\clarify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\clarify"
+    },
+    "connect-tool": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\connect-tool"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\connect-tool"
+    },
+    "constitution": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\constitution"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\constitution"
+    },
+    "debug": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\debug"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\debug"
+    },
+    "decision-challenge": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\decision-challenge"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\decision-challenge"
+    },
+    "deprecation": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\deprecation"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\deprecation"
+    },
+    "design": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\design"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\design"
+    },
+    "fable-operator": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\fable-operator"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\fable-operator"
+    },
+    "ftd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\ftd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ftd"
+    },
+    "harness": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\harness"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\harness"
+    },
+    "idea-refinement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\idea-refinement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\idea-refinement"
+    },
+    "implement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\implement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\implement"
+    },
+    "init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\init"
+    },
+    "orient": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\orient"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\orient"
+    },
+    "parallel": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\parallel"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\parallel"
+    },
+    "plan": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\plan"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\plan"
+    },
+    "review": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\review"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\review"
+    },
+    "sdd-init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\sdd-init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\sdd-init"
+    },
+    "security-audit": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\security-audit"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\security-audit"
+    },
+    "ship": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\ship"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ship"
+    },
+    "simplify-code": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\simplify-code"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\simplify-code"
+    },
+    "source-grounded-development": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\source-grounded-development"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\source-grounded-development"
+    },
+    "specify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\specify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\specify"
+    },
+    "suggest": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\suggest"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\suggest"
+    },
+    "tasks": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\tasks"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tasks"
+    },
+    "tidy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\tidy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tidy"
+    },
+    "unslop": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\unslop"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\unslop"
+    },
+    "ux": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\ux"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ux"
+    },
+    "verify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\verify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\verify"
+    },
+    "worktrees": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.antigravity\\rsc\\worktrees"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\worktrees"
+    }
+  },
+  "agents": [],
+  "agentCollisions": [],
+  "agentsKept": [],
+  "explicitAgents": [],
+  "memory": {
+    "mode": "unsupported",
+    "reason": "no-local-lifecycle",
+    "paths": []
+  },
+  "update": {
+    "mode": "agent"
+  },
+  "knowledge": {
+    "mode": "unsupported",
+    "reason": null,
+    "paths": []
+  },
+  "gitPermissions": {
+    "mode": "unsupported",
+    "path": null
+  },
+  "policy": {
+    "baseAgents": true,
+    "alwaysOn": true,
+    "codeHooks": true,
+    "dangerGuard": true,
+    "laneGate": true,
+    "gitmojiGuard": true,
+    "memory": true,
+    "context7": false
+  },
+  "commands": [],
+  "commandCollisions": [],
+  "version": "4.1.2"
+}

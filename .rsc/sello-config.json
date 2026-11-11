@@ -1,0 +1,23 @@
+{
+  "enabled": false,
+  "risk": {
+    "raise": [
+      {
+        "class": "auth",
+        "tier": 2,
+        "pattern": "(^|/)internal/domain/identity/|(^|/)internal/interfaces/.*/auth"
+      },
+      {
+        "class": "migrations",
+        "tier": 2,
+        "pattern": "(^|/)migrations/"
+      },
+      {
+        "class": "governor-infra",
+        "tier": 2,
+        "pattern": "(^|/)internal/domain/governor/|(^|/)configs/romero\\.toml$|(^|/)docker-compose\\.yml$"
+      }
+    ]
+  }
+}
+

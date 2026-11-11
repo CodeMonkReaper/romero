@@ -1,0 +1,256 @@
+{
+  "skills": {
+    "analyze": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\analyze"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\analyze"
+    },
+    "asdd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\asdd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\asdd"
+    },
+    "automation-strategy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\automation-strategy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\automation-strategy"
+    },
+    "clarify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\clarify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\clarify"
+    },
+    "connect-tool": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\connect-tool"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\connect-tool"
+    },
+    "constitution": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\constitution"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\constitution"
+    },
+    "debug": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\debug"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\debug"
+    },
+    "decision-challenge": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\decision-challenge"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\decision-challenge"
+    },
+    "deprecation": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\deprecation"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\deprecation"
+    },
+    "design": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\design"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\design"
+    },
+    "fable-operator": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\fable-operator"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\fable-operator"
+    },
+    "ftd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\ftd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ftd"
+    },
+    "harness": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\harness"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\harness"
+    },
+    "idea-refinement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\idea-refinement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\idea-refinement"
+    },
+    "implement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\implement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\implement"
+    },
+    "init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\init"
+    },
+    "orient": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\orient"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\orient"
+    },
+    "parallel": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\parallel"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\parallel"
+    },
+    "plan": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\plan"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\plan"
+    },
+    "review": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\review"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\review"
+    },
+    "sdd-init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\sdd-init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\sdd-init"
+    },
+    "security-audit": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\security-audit"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\security-audit"
+    },
+    "ship": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\ship"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ship"
+    },
+    "simplify-code": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\simplify-code"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\simplify-code"
+    },
+    "source-grounded-development": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\source-grounded-development"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\source-grounded-development"
+    },
+    "specify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\specify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\specify"
+    },
+    "suggest": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\suggest"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\suggest"
+    },
+    "tasks": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\tasks"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tasks"
+    },
+    "tidy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\tidy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tidy"
+    },
+    "unslop": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\unslop"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\unslop"
+    },
+    "ux": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\ux"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ux"
+    },
+    "verify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\verify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\verify"
+    },
+    "worktrees": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\skills\\worktrees"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\worktrees"
+    }
+  },
+  "agents": [
+    "developer",
+    "finding-verifier",
+    "refuter-correctness",
+    "refuter-security",
+    "refuter-tests"
+  ],
+  "agentCollisions": [],
+  "agentsKept": [],
+  "explicitAgents": [],
+  "memory": {
+    "mode": "full",
+    "reason": "wired",
+    "paths": [
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-core.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-adapter.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\settings.local.json"
+    ]
+  },
+  "update": {
+    "mode": "hook"
+  },
+  "knowledge": {
+    "mode": "wired",
+    "reason": null,
+    "paths": [
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\knowledge-sync.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\trunk-policy.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\settings.local.json"
+    ]
+  },
+  "gitPermissions": {
+    "mode": "wired",
+    "path": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.claude\\settings.json"
+  },
+  "policy": {
+    "baseAgents": true,
+    "alwaysOn": true,
+    "codeHooks": true,
+    "dangerGuard": true,
+    "laneGate": true,
+    "gitmojiGuard": true,
+    "memory": true,
+    "context7": false
+  },
+  "commands": [
+    "checkpoint",
+    "learn",
+    "resume-session",
+    "save-session"
+  ],
+  "commandCollisions": [],
+  "version": "4.1.2"
+}

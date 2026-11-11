@@ -1,0 +1,22 @@
+{
+  ".claude/agents/developer.md": "bb9b7ddfad2adfe906d9e829564737a8dc24d9821834f69e4fc5c93bfd6cf8fd",
+  ".claude/agents/finding-verifier.md": "5d536ff49566f9ddabb6eb2978262796fae5d4798d278e4cd943aaadef5ee397",
+  ".claude/agents/refuter-correctness.md": "68cf58c82b0c3af3d1dabe347f81d577b1c1133696038450eb5f98129a073d2f",
+  ".claude/agents/refuter-security.md": "0c00aeaad89c1443abe2668b34711abf707ee7dd666e82500bd05ceaf7b2f8c0",
+  ".claude/agents/refuter-tests.md": "e8463b44874ceebbe334dadcf0c4566c5f952580a77017ca4fe2428299afd94b",
+  ".codex/agents/developer.toml": "46d9dcde8fbd8c4d7253e4c89a2b3c088b1d525267d7814f7ae7b046f6cecdc4",
+  ".codex/agents/finding-verifier.toml": "e0ecaa11ec1c121d0d5b100d8bc95e88fbf5d9890592ba07e08d8365515b8cd3",
+  ".codex/agents/refuter-correctness.toml": "20b32655bc6ce7d5e4e71d1967dbdfab5a42fdf69de91ff5c6d8565802c79769",
+  ".codex/agents/refuter-security.toml": "69e82090746153be576ca1401ac0cbfc89466a15b15a4dd7ca87a4090bc8f655",
+  ".codex/agents/refuter-tests.toml": "1b1a40a02d6195ce22b131342de4de381a4c12868891a6e1829357b4f20d56e0",
+  ".gemini/agents/developer.md": "d65ee0a2d827afbd365e5dfb91d1e4d959ee7cfe4a86cc6213b4c59aeb5cc218",
+  ".gemini/agents/finding-verifier.md": "79a87fb0c6ee7463458c139e791dd33d822d9252c98ffc0b3e785b042eee75c5",
+  ".gemini/agents/refuter-correctness.md": "f408c48affc6b0e9e6f2c20235c0e5f1d63811392e1fe8a403eb28b9cf72ae50",
+  ".gemini/agents/refuter-security.md": "4784344532dedc0ee21d1a1627e1e3983852cb7f2fcf09043ebdefe335e05bee",
+  ".gemini/agents/refuter-tests.md": "c9ad5d5417ace640c91bfbb53b9ad5e276119579bcd0793061462ea7e6a7245b",
+  ".opencode/agents/developer.md": "f4dc18be6aedc63270f4d5afd6949bf482902688036732c95117e4b8c4709cac",
+  ".opencode/agents/finding-verifier.md": "cc1786de1a6f0380f99fd5e6c0f5f76965d555d0cf6b7e51af09f33efc4212d8",
+  ".opencode/agents/refuter-correctness.md": "7807a02bd5ae3163eb48901e5f8dd6cba00e16355a9f895b5c8856f278eeea56",
+  ".opencode/agents/refuter-security.md": "79dcd57da06d4e51b67f6f531b51aacb30e391ad114f34213d9c65ed908053dc",
+  ".opencode/agents/refuter-tests.md": "13782f354a381ef78431ff68e61f39e1a62117be876cdef35a08d66d275c7f17"
+}

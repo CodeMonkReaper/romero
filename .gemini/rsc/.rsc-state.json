@@ -1,0 +1,269 @@
+{
+  "skills": {
+    "analyze": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\analyze"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\analyze"
+    },
+    "asdd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\asdd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\asdd"
+    },
+    "automation-strategy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\automation-strategy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\automation-strategy"
+    },
+    "clarify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\clarify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\clarify"
+    },
+    "connect-tool": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\connect-tool"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\connect-tool"
+    },
+    "constitution": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\constitution"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\constitution"
+    },
+    "debug": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\debug"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\debug"
+    },
+    "decision-challenge": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\decision-challenge"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\decision-challenge"
+    },
+    "deprecation": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\deprecation"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\deprecation"
+    },
+    "design": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\design"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\design"
+    },
+    "fable-operator": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\fable-operator"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\fable-operator"
+    },
+    "ftd": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\ftd"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ftd"
+    },
+    "harness": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\harness"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\harness"
+    },
+    "idea-refinement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\idea-refinement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\idea-refinement"
+    },
+    "implement": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\implement"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\implement"
+    },
+    "init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\init"
+    },
+    "orient": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\orient"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\orient"
+    },
+    "parallel": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\parallel"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\parallel"
+    },
+    "plan": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\plan"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\plan"
+    },
+    "review": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\review"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\review"
+    },
+    "sdd-init": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\sdd-init"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\sdd-init"
+    },
+    "security-audit": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\security-audit"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\security-audit"
+    },
+    "ship": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\ship"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ship"
+    },
+    "simplify-code": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\simplify-code"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\simplify-code"
+    },
+    "source-grounded-development": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\source-grounded-development"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\source-grounded-development"
+    },
+    "specify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\specify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\specify"
+    },
+    "suggest": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\suggest"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\suggest"
+    },
+    "tasks": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\tasks"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tasks"
+    },
+    "tidy": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\tidy"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\tidy"
+    },
+    "unslop": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\unslop"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\unslop"
+    },
+    "ux": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\ux"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\ux"
+    },
+    "verify": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\verify"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\verify"
+    },
+    "worktrees": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\worktrees"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\worktrees"
+    }
+  },
+  "agents": [
+    "developer",
+    "finding-verifier",
+    "refuter-correctness",
+    "refuter-security",
+    "refuter-tests"
+  ],
+  "agentCollisions": [],
+  "agentsKept": [],
+  "explicitAgents": [],
+  "memory": {
+    "mode": "full",
+    "reason": "wired",
+    "paths": [
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-core.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-adapter.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\settings.json"
+    ]
+  },
+  "update": {
+    "mode": "hook"
+  },
+  "knowledge": {
+    "mode": "wired",
+    "reason": null,
+    "paths": [
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\knowledge-sync.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\trunk-policy.mjs",
+      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\settings.json"
+    ]
+  },
+  "gitPermissions": {
+    "mode": "wired",
+    "path": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\settings.json"
+  },
+  "policy": {
+    "baseAgents": true,
+    "alwaysOn": true,
+    "codeHooks": true,
+    "dangerGuard": true,
+    "laneGate": true,
+    "gitmojiGuard": true,
+    "memory": true,
+    "context7": false
+  },
+  "commands": [
+    "analyze",
+    "checkpoint",
+    "clarify",
+    "debug",
+    "harness-audit",
+    "implement",
+    "learn",
+    "plan",
+    "refactor-clean",
+    "resume-session",
+    "review",
+    "save-session",
+    "security-audit",
+    "ship",
+    "specify",
+    "tasks",
+    "verify"
+  ],
+  "commandCollisions": [],
+  "version": "4.1.2"
+}

@@ -1,0 +1,40 @@
+# Binaries and build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+romero
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Environment and secrets (Principle 13)
+.env
+.env.*
+!.env.example
+01-TOOLS/*/.env
+01-TOOLS/*/.env.*
+!01-TOOLS/_TEMPLATE/.env.example
+
+# Isolated git worktrees and local harness journals
+.worktrees/
+.claude/worktrees/
+.rsc/backups/
+.rsc/sello.json
+.rsc/sello-findings.md
+.rsc/sello-log.jsonl
+.rsc/review-ledger.jsonl
+.rsc/automation-gaps.md
+.claude/settings.local.json
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
