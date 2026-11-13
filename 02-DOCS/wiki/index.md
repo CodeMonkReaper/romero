@@ -20,7 +20,29 @@ Mapa central del conocimiento del proyecto **ROMERO**.
 
 | Documento | Ruta |
 | :--- | :--- |
+| Configuración runtime de SDD | `02-DOCS/wiki/sdd/config.yaml` |
 | Project constitution (SDD non-negotiables) | `02-DOCS/wiki/sdd/constitution.md` |
 | Registro de decisiones arquitectónicas y de SDD | `02-DOCS/wiki/sdd/decisions.md` |
 | Criterios de revisión del repositorio | `REVIEW.md` |
+
+## Especificaciones Funcionales (`sdd/specs/`)
+
+| Documento | Ruta |
+| :--- | :--- |
+| Spec — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/specs/phase-01-foundation.md` |
+
+## Planes Técnicos (`sdd/plans/`)
+
+| Documento | Ruta |
+| :--- | :--- |
+| Plan — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/plans/phase-01-foundation.md` |
+
+## Análisis de Consistencia (`sdd/analysis/`)
+
+| Documento | Ruta |
+| :--- | :--- |
+| Analysis — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/analysis/phase-01-foundation.md` |
+
+
+
 
