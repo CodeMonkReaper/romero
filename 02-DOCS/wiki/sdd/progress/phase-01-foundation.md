@@ -45,3 +45,11 @@
 - skill_resolution: implement, go, postgresdb, verify, review, ship; developer delegado no disponible por modelo incompatible con la cuenta; ejecución local como fallback, revisores independientes disponibles.
 - evidence: verifications/phase-01-foundation-T001-2026-11-13-r2.md y reviews/phase-01-foundation-T001-validation.md. El veredicto FAIL previo permanece histórico, sustituido para T001 por la excepción autorizada.
 - next: publicar el commit complementario y el PR hacia la rama de Phase 01; no cerrar Issue #1 antes de la integración y aprobación requeridas. No se declara Phase 01 completa ni se inicia T002.
+
+## T001 — entrega preparada — 2026-11-13
+- status: verified-awaiting-integration
+- commit: 30ad02d; autor humano configurado en Git; árbol limpio después del commit.
+- PR: https://github.com/CodeMonkReaper/romero/pull/11 (borrador, base feat/phase-01-foundation, head codex/t001-validation).
+- tracker: https://github.com/CodeMonkReaper/romero/issues/1#issuecomment-6867770727; control sqlc transferido con autorización humana a https://github.com/CodeMonkReaper/romero/issues/4#issuecomment-6867601911.
+- review-ledger: panel correctness/security/tests registrado sobre 30ad02d. Una ejecución de cada lente; el CLI registra round 2 tras asociar el panel al commit final (el registro inicial estaba sobre la base 026b599).
+- next: aprobación humana e integración del PR; Issue #1 permanece abierto hasta la integración requerida. T001 validada no implica Phase 01 completada.
