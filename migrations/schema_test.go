@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,47 +53,71 @@ func TestCoreSchemaMigrationContract(t *testing.T) {
 	}
 
 	// Verify memory_versions is self-contained for Point-in-Time queries (AC-07, D6, Technical 1 & 2)
-	versionStart := strings.Index(sqlText, "CREATE TABLE memory_versions (")
-	if versionStart == -1 {
-		t.Fatalf("CREATE TABLE memory_versions not found")
+	versionBlock := extractBlock(t, sqlText, "CREATE TABLE memory_versions (", ");")
+	requiredVersionColDefs := []string{
+		"memory_id           UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE",
+		"version             INTEGER NOT NULL",
+		"summary             VARCHAR(600) NOT NULL",
+		"content             TEXT NOT NULL",
+		"tags                TEXT[] NOT NULL DEFAULT '{}'",
+		"entities            TEXT[] NOT NULL DEFAULT '{}'",
+		"metadata            JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"epistemic_status    epistemic_status_enum NOT NULL",
+		"alpha_score         REAL NOT NULL CHECK (alpha_score > 0.0)",
+		"beta_score          REAL NOT NULL CHECK (beta_score > 0.0)",
+		"importance          REAL NOT NULL DEFAULT 0.50 CHECK (importance >= 0.0 AND importance <= 1.0)",
+		"utility_score       REAL NOT NULL DEFAULT 0.00 CHECK (utility_score >= -1.0 AND utility_score <= 1.0)",
+		"status              memory_status_enum NOT NULL",
+		"valid_from          TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"valid_until         TIMESTAMPTZ",
+		"changed_by_source   UUID REFERENCES memory_sources(id) ON DELETE SET NULL",
+		"change_reason       TEXT",
+		"created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()",
 	}
-	versionEnd := strings.Index(sqlText[versionStart:], ");")
-	if versionEnd == -1 {
-		t.Fatalf("end of CREATE TABLE memory_versions not found")
-	}
-	versionBlock := sqlText[versionStart : versionStart+versionEnd]
-	requiredVersionCols := []string{
-		"tags",
-		"entities",
-		"metadata",
-		"importance",
-		"utility_score",
-		"valid_from",
-		"valid_until",
-		"changed_by_source",
-		"change_reason",
-		"created_at",
-	}
-	for _, col := range requiredVersionCols {
-		if !strings.Contains(versionBlock, col) {
-			t.Errorf("memory_versions missing required self-contained bitemporal column %q", col)
+	for _, colDef := range requiredVersionColDefs {
+		if !strings.Contains(versionBlock, colDef) {
+			t.Errorf("memory_versions missing required self-contained column definition %q", colDef)
 		}
 	}
 
-	// Verify partitioned idx_memories_active_topic_key (AC-02, D5) and idx_memories_idempotency (AC-03, D3)
-	requiredIndexFragments := []string{
-		"CREATE UNIQUE INDEX idx_memories_idempotency",
+	// Verify idx_memories_idempotency block (AC-03, D3)
+	idempotencyIdxBlock := extractBlock(t, sqlText, "CREATE UNIQUE INDEX idx_memories_idempotency", ";")
+	for _, frag := range []string{
 		"ON memories(tenant_id, idempotency_key)",
 		"WHERE idempotency_key IS NOT NULL",
-		"CREATE UNIQUE INDEX idx_memories_active_topic_key",
-		"CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END",
-		"CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END",
+	} {
+		if !strings.Contains(idempotencyIdxBlock, frag) {
+			t.Errorf("idx_memories_idempotency block missing %q", frag)
+		}
+	}
+
+	// Verify partitioned idx_memories_active_topic_key block with parenthesized CASE expressions (AC-02, D5)
+	topicIdxBlock := extractBlock(t, sqlText, "CREATE UNIQUE INDEX idx_memories_active_topic_key", ";")
+	requiredTopicIdxParts := []string{
+		"tenant_id,",
+		"COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid),",
+		"scope_type,",
+		"(CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END),",
+		"(CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END),",
+		"topic_key",
 		"WHERE status = 'active' AND topic_key IS NOT NULL",
 	}
-	for _, frag := range requiredIndexFragments {
-		if !strings.Contains(sqlText, frag) {
-			t.Errorf("migration missing required index fragment: %s", frag)
+	for _, part := range requiredTopicIdxParts {
+		if !strings.Contains(topicIdxBlock, part) {
+			t.Errorf("idx_memories_active_topic_key block missing required expression %q", part)
 		}
+	}
+
+	// Verify no unparenthesized CASE WHEN appears inside any CREATE [UNIQUE] INDEX statement
+	unparenthesizedCaseInIndex := regexp.MustCompile(`(?m)^\s*CASE\s+WHEN\b`)
+	if unparenthesizedCaseInIndex.MatchString(topicIdxBlock) {
+		t.Errorf("idx_memories_active_topic_key contains unparenthesized CASE WHEN expression invalid in PostgreSQL index_elem grammar")
+	}
+
+	// Verify audit_events allows NULL tenant_id for unauthenticated 401 audit entries (AC-01, Spec §Behaviour)
+	auditBlock := extractBlock(t, sqlText, "CREATE TABLE audit_events (", ");")
+	if !strings.Contains(auditBlock, "tenant_id           UUID REFERENCES tenants(id) ON DELETE CASCADE") {
+		t.Errorf("audit_events.tenant_id must be nullable UUID REFERENCES tenants(id) ON DELETE CASCADE to record unauthenticated 401 attempts")
 	}
 }
 
@@ -192,10 +217,14 @@ func TestBaseScaffoldingFilesExist(t *testing.T) {
 			"version: \"2\"",
 			"engine: \"postgresql\"",
 			"sql_package: \"pgx/v5\"",
+			"import: \"time\"",
+			"type: \"Time\"",
+			"pointer: true",
 		},
 		"Makefile": {
 			"CGO_ENABLED=0",
 			"./cmd/romero",
+			"test-race:",
 		},
 		"cmd/romero/main.go": {
 			"package main",
@@ -217,4 +246,17 @@ func TestBaseScaffoldingFilesExist(t *testing.T) {
 			}
 		}
 	}
+}
+
+func extractBlock(t *testing.T, sqlText, startMarker, endMarker string) string {
+	t.Helper()
+	start := strings.Index(sqlText, startMarker)
+	if start == -1 {
+		t.Fatalf("marker %q not found in SQL", startMarker)
+	}
+	end := strings.Index(sqlText[start:], endMarker)
+	if end == -1 {
+		t.Fatalf("end marker %q after %q not found in SQL", endMarker, startMarker)
+	}
+	return sqlText[start : start+end+len(endMarker)]
 }

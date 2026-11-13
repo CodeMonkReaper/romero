@@ -22,9 +22,12 @@ sql:
               import: "github.com/google/uuid"
               type: "NullUUID"
           - db_type: "timestamptz"
-            go_type: "time.Time"
+            go_type:
+              import: "time"
+              type: "Time"
           - db_type: "timestamptz"
             nullable: true
             go_type:
-              type: "time.Time"
+              import: "time"
+              type: "Time"
               pointer: true

@@ -221,8 +221,8 @@ CREATE UNIQUE INDEX idx_memories_active_topic_key
         tenant_id,
         COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid),
         scope_type,
-        CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END,
-        CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END,
+        (CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END),
+        (CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END),
         topic_key
     )
     WHERE status = 'active' AND topic_key IS NOT NULL;
@@ -365,7 +365,7 @@ CREATE INDEX idx_memory_jobs_dequeue
 -- 11. REGISTRO INMUTABLE DE AUDITORÍA Y EJECUCIONES DE CONSOLIDACIÓN
 CREATE TABLE audit_events (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id           UUID REFERENCES tenants(id) ON DELETE CASCADE,
     principal_id        UUID REFERENCES principals(id) ON DELETE SET NULL,
     agent_id            UUID REFERENCES agents(id) ON DELETE SET NULL,
     operation           VARCHAR(64) NOT NULL,
