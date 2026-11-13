@@ -94,3 +94,14 @@ Registro append-only de las decisiones arquitectónicas y de especificación tom
   5. **Entorno de pruebas de integración (`T001`, `T004`, `T009`):** Ejecutar contra el contenedor `romero-postgres` (`pgvector/pgvector:pg17` en `127.0.0.1:54329`) de `docker-compose.yml` con limpieza `TRUNCATE ... CASCADE` por test.
   6. **Ejecución secuencial (`T001` $\rightarrow$ `T010`):** Ejecutar las tareas secuencialmente en la rama `feat/phase-01-foundation` con un commit verificado por tarea.
 - **Por qué:** Elimina cualquier ambigüedad en los contratos entre tareas antes de ejecutar la compuerta `analyze` y comenzar `implement`.
+
+---
+
+## 2026-11-13 — Expresiones `CASE` parentizadas en `idx_memories_active_topic_key` y `audit_events.tenant_id` anulable para `401` (feature: `phase-01-foundation`, task: `T001`)
+
+- **Contexto:** Durante el panel Tier 2 de `T001` (`refuter-correctness`, `refuter-security`, `refuter-tests`), se detectó que (1) la regla gramatical `index_elem` de PostgreSQL 17 exige parentizar las expresiones `CASE WHEN ... END` dentro de `CREATE UNIQUE INDEX`, y (2) `audit_events.tenant_id` declarado `NOT NULL` impediría persistir los eventos `audit_events(outcome = 'denied', operation = 'authenticate')` exigidos por el contrato cuando una petición `401 Unauthorized` llega sin credencial o con una API key desconocida que no resuelve a ningún `tenant_id`.
+- **Opciones consideradas:**
+  1. Crear un tenant centinela ficticio para los intentos `401` sin credencial válida y usar funciones SQL auxiliares para el índice único.
+  2. Permitir `tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE` (anulable, igual que `principal_id` y `agent_id`) en `audit_events` y envolver cada expresión `CASE WHEN ... END` entre paréntesis `(CASE WHEN ... END)` en `idx_memories_active_topic_key`.
+- **Decisión:** Opción 2 (aplicada en commit `078645f`, verificada en Ronda 2 con 0 hallazgos).
+- **Por qué:** Satisface la gramática nativa de PostgreSQL 17 y `sqlc` sin funciones auxiliares y permite auditar cualquier intento de intrusión `401` sin contaminar la tabla `tenants` con registros centinela.
