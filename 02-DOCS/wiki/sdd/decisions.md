@@ -105,3 +105,11 @@ Registro append-only de las decisiones arquitectónicas y de especificación tom
   2. Permitir `tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE` (anulable, igual que `principal_id` y `agent_id`) en `audit_events` y envolver cada expresión `CASE WHEN ... END` entre paréntesis `(CASE WHEN ... END)` en `idx_memories_active_topic_key`.
 - **Decisión:** Opción 2 (aplicada en commit `078645f`, verificada en Ronda 2 con 0 hallazgos).
 - **Por qué:** Satisface la gramática nativa de PostgreSQL 17 y `sqlc` sin funciones auxiliares y permite auditar cualquier intento de intrusión `401` sin contaminar la tabla `tenants` con registros centinela.
+
+## 2026-11-13 — Diferir generación sqlc hasta T004 (feature: phase-01-foundation, tasks: T001/T004)
+
+- Contexto: sqlc v1.31.1 ejecutado realmente falla porque el directorio de consultas aún no existe. El plan asigna las consultas y su generación a T004; T001 crea la configuración base.
+- Opciones: mantener T001 pendiente hasta T004; o aceptar explícitamente el control diferido a T004 sin modificar la configuración ni crear consultas ficticias.
+- Decisión humana: el usuario respondió «Sí, diferir sqlc a T004» a la solicitud de autorización de este control para cerrar T001 cuando terminen revisión y entrega.
+- Por qué: respeta el alcance del plan y mantiene la generación SQL como condición de cierre obligatoria de T004. El comando fallido sigue registrado, no se informa como aprobado.
+- Entorno: se usa PostgreSQL desechable separado del servicio Compose para validar la misma migración sin afectar la sesión concurrente. Las pruebas race usan GCC en contenedor; el binario de producto sigue compilándose con CGO_ENABLED=0.

@@ -49,6 +49,12 @@ Mapa central del conocimiento del proyecto **ROMERO**.
 | :--- | :--- |
 | Progress Ledger — Phase 01 Foundation | `02-DOCS/wiki/sdd/progress/phase-01-foundation.md` |
 
+## Verificación de T001
+
+- [PostgreSQL real y controles de T001](sdd/verifications/phase-01-foundation-T001-2026-11-13.md)
+- [Verificación T001 con sqlc diferido por aprobación humana](sdd/verifications/phase-01-foundation-T001-2026-11-13-r2.md)
+- [Revisión complementaria de T001](sdd/reviews/phase-01-foundation-T001-validation.md)
+
 
 
 
