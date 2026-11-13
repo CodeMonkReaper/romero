@@ -43,6 +43,13 @@ Mapa central del conocimiento del proyecto **ROMERO**.
 | :--- | :--- |
 | Analysis — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/analysis/phase-01-foundation.md` |
 
+## Progreso de Implementación (`sdd/progress/`)
+
+| Documento | Ruta |
+| :--- | :--- |
+| Progress Ledger — Phase 01 Foundation | `02-DOCS/wiki/sdd/progress/phase-01-foundation.md` |
+
+
 
 
 
