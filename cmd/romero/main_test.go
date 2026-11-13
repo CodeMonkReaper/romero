@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -43,5 +44,17 @@ func TestRun(t *testing.T) {
 				t.Fatalf("expected output %q, got %q", tc.wantOut, got)
 			}
 		})
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write(p []byte) (int, error) {
+	return 0, io.ErrClosedPipe
+}
+
+func TestRunVersionWriteFailure(t *testing.T) {
+	if code := run([]string{"version"}, failingWriter{}); code == 0 {
+		t.Fatal("expected nonzero exit code when version output fails")
 	}
 }
