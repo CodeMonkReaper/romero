@@ -6,7 +6,7 @@ dist/
 *.dll
 *.so
 *.dylib
-romero
+/romero
 
 # Test and coverage artifacts
 *.test

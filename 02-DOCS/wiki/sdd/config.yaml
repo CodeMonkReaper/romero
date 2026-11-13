@@ -12,7 +12,6 @@ project:
   signals:
     - constitution:v1.0.0
     - master-spec:v2.0.0
-    - gap:no-go-mod-yet
 sdd:
   artifact_store: 02-DOCS/wiki/sdd
   execution_mode: interactive
@@ -23,9 +22,9 @@ sdd:
   delivery_strategy:
     default: ask-on-risk
 testing:
-  # No go.mod exists in the workspace yet; flips to strict_tdd: true as soon as go.mod is initialized in Sprint 1.
-  strict_tdd: false
-  runners: []
+  strict_tdd: true
+  runners:
+    - go-test
   commands:
     apply:
       - sqlc generate
