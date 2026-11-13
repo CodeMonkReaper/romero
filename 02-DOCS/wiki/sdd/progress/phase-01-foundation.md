@@ -61,3 +61,13 @@
 - controls: mismo código verificado y revisado; merge sin conflictos sobre la base original 026b599. No se modificó main ni la carpeta de la sesión concurrente.
 - decision-queue: la validación PostgreSQL de DQ-01 ya tiene evidencia runtime y aprobación de integración humana; no queda bloqueada por Docker. sqlc permanece diferido explícitamente a T004.
 - next: entrega del trabajo base de T001 desde la rama de fase a main con sus controles de cierre; mantener Issue #1 abierto hasta esa entrega. No se declara Phase 01 completada.
+
+## T001 — entrega a main — 2026-11-13
+- status: complete (implementación y verificación); entrega mediante PR #12.
+- human-approval: el usuario respondió «si» a proceder con la entrega de T001 a main.
+- PR: https://github.com/CodeMonkReaper/romero/pull/12; Closes #1 al fusionarse en main. El estado de merge lo confirma GitHub, no esta anotación preparada antes de integrarse.
+- source: código completo 7118a66 contra main 6dd9935, sin commits de main pendientes de integrar; cambios posteriores solo de documentación.
+- controls: build CGO_ENABLED=0, vet, race (sin caché, CLI 83.3%), formato, lint, vulnerabilidades y módulos PASS. Goose Down/Up y SQL con rollback PASS. sqlc diferido expresamente a T004; sin otros controles omitidos del gate ejecutado.
+- review: tier 2; panel de tres lentes sobre todo el diff contra main, ronda 1; 0 reportados → 0 únicos → 0 por verificar, verdict pass. Límites de reproducción independiente documentados.
+- evidence: verifications/phase-01-foundation-T001-main-2026-11-13.md y reviews/phase-01-foundation-T001-main.md.
+- next: confirmar merge/cierre de Issue #1; luego T002. Phase 01 sigue en ejecución, T002–T010 pendientes.

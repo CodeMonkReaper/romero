@@ -54,6 +54,8 @@ Mapa central del conocimiento del proyecto **ROMERO**.
 - [PostgreSQL real y controles de T001](sdd/verifications/phase-01-foundation-T001-2026-11-13.md)
 - [Verificación T001 con sqlc diferido por aprobación humana](sdd/verifications/phase-01-foundation-T001-2026-11-13-r2.md)
 - [Revisión complementaria de T001](sdd/reviews/phase-01-foundation-T001-validation.md)
+- [Verificación de entrega T001 a main](sdd/verifications/phase-01-foundation-T001-main-2026-11-13.md)
+- [Revisión completa T001 contra main](sdd/reviews/phase-01-foundation-T001-main.md)
 
 
 
