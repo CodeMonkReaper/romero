@@ -197,6 +197,54 @@
         "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\worktrees"
       ],
       "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\worktrees"
+    },
+    "api-design": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\api-design"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\api-design"
+    },
+    "docker": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\docker"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\docker"
+    },
+    "embeddings-search": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\embeddings-search"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\embeddings-search"
+    },
+    "go": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\go"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\go"
+    },
+    "observability": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\observability"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\observability"
+    },
+    "postgresdb": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\postgresdb"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\postgresdb"
+    },
+    "testing-go": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\testing-go"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\testing-go"
+    },
+    "vector-db": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\rsc\\vector-db"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\vector-db"
     }
   },
   "agents": [
@@ -210,26 +258,18 @@
   "agentsKept": [],
   "explicitAgents": [],
   "memory": {
-    "mode": "full",
-    "reason": "hook-trust-required",
-    "paths": [
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-core.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-adapter.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\hooks.json"
-    ]
+    "mode": "degraded",
+    "reason": "config-tracked",
+    "paths": []
   },
   "update": {
-    "mode": "hook"
+    "mode": "agent",
+    "reason": "config-tracked"
   },
   "knowledge": {
-    "mode": "wired",
-    "reason": null,
-    "paths": [
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\knowledge-sync.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\trunk-policy.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.codex\\hooks.json"
-    ]
+    "mode": "degraded",
+    "reason": "config-tracked",
+    "paths": []
   },
   "gitPermissions": {
     "mode": "wired",
@@ -247,5 +287,54 @@
   },
   "commands": [],
   "commandCollisions": [],
-  "version": "4.1.2"
+  "version": "4.1.2",
+  "ignoreEntriesAdded": [
+    ".codex/agents/developer.toml",
+    ".codex/agents/finding-verifier.toml",
+    ".codex/agents/refuter-correctness.toml",
+    ".codex/agents/refuter-security.toml",
+    ".codex/agents/refuter-tests.toml",
+    ".codex/rsc/.rsc-state.json",
+    ".codex/rsc/analyze",
+    ".codex/rsc/api-design",
+    ".codex/rsc/asdd",
+    ".codex/rsc/automation-strategy",
+    ".codex/rsc/clarify",
+    ".codex/rsc/connect-tool",
+    ".codex/rsc/constitution",
+    ".codex/rsc/debug",
+    ".codex/rsc/decision-challenge",
+    ".codex/rsc/deprecation",
+    ".codex/rsc/design",
+    ".codex/rsc/docker",
+    ".codex/rsc/embeddings-search",
+    ".codex/rsc/fable-operator",
+    ".codex/rsc/ftd",
+    ".codex/rsc/go",
+    ".codex/rsc/harness",
+    ".codex/rsc/idea-refinement",
+    ".codex/rsc/implement",
+    ".codex/rsc/init",
+    ".codex/rsc/observability",
+    ".codex/rsc/orient",
+    ".codex/rsc/parallel",
+    ".codex/rsc/plan",
+    ".codex/rsc/postgresdb",
+    ".codex/rsc/review",
+    ".codex/rsc/sdd-init",
+    ".codex/rsc/security-audit",
+    ".codex/rsc/ship",
+    ".codex/rsc/simplify-code",
+    ".codex/rsc/source-grounded-development",
+    ".codex/rsc/specify",
+    ".codex/rsc/suggest",
+    ".codex/rsc/tasks",
+    ".codex/rsc/testing-go",
+    ".codex/rsc/tidy",
+    ".codex/rsc/unslop",
+    ".codex/rsc/ux",
+    ".codex/rsc/vector-db",
+    ".codex/rsc/verify",
+    ".codex/rsc/worktrees"
+  ]
 }

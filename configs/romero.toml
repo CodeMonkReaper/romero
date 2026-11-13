@@ -1,0 +1,46 @@
+[server]
+host = "127.0.0.1"
+rest_port = 8420
+mcp_sse_port = 8421
+active_profile = "ultra" # Opciones: "lite" | "balanced" | "ultra"
+
+[database]
+dsn = "postgres://romero:romero_local_secret@127.0.0.1:54329/romero?sslmode=disable"
+max_conns = 32
+min_conns = 4
+
+[profiles.lite]
+enable_l1_graph_cache = false
+spreading_activation_hops = 1
+enable_cross_encoder = false
+enable_nli_detector = false
+enable_rem_consolidation = false
+embedding_endpoint = "http://127.0.0.1:11434/api/embeddings"
+
+[profiles.balanced]
+enable_l1_graph_cache = true
+l1_max_memory_mb = 128
+spreading_activation_hops = 2
+enable_cross_encoder = false
+enable_nli_detector = true
+nli_mode = "async_worker"
+enable_rem_consolidation = false
+embedding_endpoint = "http://127.0.0.1:8081/embed"
+nli_endpoint = "http://127.0.0.1:8083/nli"
+
+[profiles.ultra]
+enable_l1_graph_cache = true
+l1_max_memory_mb = 350
+spreading_activation_hops = 3
+enable_cross_encoder = true
+cross_encoder_top_k = 30
+enable_nli_detector = true
+nli_mode = "realtime_and_worker"
+enable_rem_consolidation = true
+rem_idle_trigger_seconds = 120
+rem_unload_slm_immediately = true
+embedding_endpoint = "http://127.0.0.1:8081/embed"
+reranker_endpoint = "http://127.0.0.1:8082/rerank"
+nli_endpoint = "http://127.0.0.1:8083/nli"
+slm_rem_endpoint = "http://127.0.0.1:11434/api/generate"
+slm_rem_model = "qwen2.5:3b-instruct-q4_K_M"

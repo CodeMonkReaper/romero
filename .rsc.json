@@ -9,6 +9,7 @@
   ],
   "skills": [
     "analyze",
+    "api-design",
     "asdd",
     "automation-strategy",
     "clarify",
@@ -18,15 +19,20 @@
     "decision-challenge",
     "deprecation",
     "design",
+    "docker",
+    "embeddings-search",
     "fable-operator",
     "ftd",
+    "go",
     "harness",
     "idea-refinement",
     "implement",
     "init",
+    "observability",
     "orient",
     "parallel",
     "plan",
+    "postgresdb",
     "review",
     "sdd-init",
     "security-audit",
@@ -36,9 +42,11 @@
     "specify",
     "suggest",
     "tasks",
+    "testing-go",
     "tidy",
     "unslop",
     "ux",
+    "vector-db",
     "verify",
     "worktrees"
   ],
@@ -1467,6 +1475,11 @@
       "AGENTS.md": "c316cf7c9fa8f58c312b3d50d360d95820474b46080e53ed87ed348b9f6d0dd6",
       "GEMINI.md": "c316cf7c9fa8f58c312b3d50d360d95820474b46080e53ed87ed348b9f6d0dd6",
       "opencode.json": "12b29cdc3740ace4cd04dd4d42b1e97691d77d156412dee25a86b7d17ba13fda"
+    },
+    "maintenanceDrift": {
+      "action": "add go,testing-go,postgresdb,vector-db,embeddings-search,docker,api-design,observability",
+      "recordedAt": "2026-11-11T22:37:44.775Z",
+      "requiresReassessment": true
     }
   }
 }

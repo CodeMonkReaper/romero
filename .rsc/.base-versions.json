@@ -31,5 +31,13 @@
   "unslop": "4.1.2",
   "ux": "4.1.2",
   "verify": "4.1.2",
-  "worktrees": "4.1.2"
+  "worktrees": "4.1.2",
+  "api-design": "4.1.2",
+  "docker": "4.1.2",
+  "embeddings-search": "4.1.2",
+  "go": "4.1.2",
+  "observability": "4.1.2",
+  "postgresdb": "4.1.2",
+  "testing-go": "4.1.2",
+  "vector-db": "4.1.2"
 }

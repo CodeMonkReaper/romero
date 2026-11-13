@@ -197,6 +197,54 @@
         "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\worktrees"
       ],
       "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\worktrees"
+    },
+    "api-design": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\api-design"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\api-design"
+    },
+    "docker": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\docker"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\docker"
+    },
+    "embeddings-search": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\embeddings-search"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\embeddings-search"
+    },
+    "go": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\go"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\go"
+    },
+    "observability": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\observability"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\observability"
+    },
+    "postgresdb": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\postgresdb"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\postgresdb"
+    },
+    "testing-go": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\testing-go"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\testing-go"
+    },
+    "vector-db": {
+      "files": [
+        "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\rsc\\vector-db"
+      ],
+      "base": "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\skills\\vector-db"
     }
   },
   "agents": [
@@ -210,26 +258,18 @@
   "agentsKept": [],
   "explicitAgents": [],
   "memory": {
-    "mode": "full",
-    "reason": "wired",
-    "paths": [
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-core.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory-adapter.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\session-memory.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\settings.json"
-    ]
+    "mode": "degraded",
+    "reason": "config-tracked",
+    "paths": []
   },
   "update": {
-    "mode": "hook"
+    "mode": "agent",
+    "reason": "config-tracked"
   },
   "knowledge": {
-    "mode": "wired",
-    "reason": null,
-    "paths": [
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\knowledge-sync.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.rsc\\trunk-policy.mjs",
-      "C:\\Users\\luis_\\OneDrive\\Documentos\\Romero\\.gemini\\settings.json"
-    ]
+    "mode": "degraded",
+    "reason": "config-tracked",
+    "paths": []
   },
   "gitPermissions": {
     "mode": "wired",
@@ -252,18 +292,80 @@
     "debug",
     "harness-audit",
     "implement",
-    "learn",
     "plan",
     "refactor-clean",
-    "resume-session",
     "review",
-    "save-session",
     "security-audit",
     "ship",
     "specify",
     "tasks",
+    "test-coverage",
     "verify"
   ],
   "commandCollisions": [],
-  "version": "4.1.2"
+  "version": "4.1.2",
+  "ignoreEntriesAdded": [
+    ".gemini/agents/developer.md",
+    ".gemini/agents/finding-verifier.md",
+    ".gemini/agents/refuter-correctness.md",
+    ".gemini/agents/refuter-security.md",
+    ".gemini/agents/refuter-tests.md",
+    ".gemini/commands/analyze.toml",
+    ".gemini/commands/checkpoint.toml",
+    ".gemini/commands/clarify.toml",
+    ".gemini/commands/debug.toml",
+    ".gemini/commands/harness-audit.toml",
+    ".gemini/commands/implement.toml",
+    ".gemini/commands/plan.toml",
+    ".gemini/commands/refactor-clean.toml",
+    ".gemini/commands/review.toml",
+    ".gemini/commands/security-audit.toml",
+    ".gemini/commands/ship.toml",
+    ".gemini/commands/specify.toml",
+    ".gemini/commands/tasks.toml",
+    ".gemini/commands/test-coverage.toml",
+    ".gemini/commands/verify.toml",
+    ".gemini/rsc/.rsc-state.json",
+    ".gemini/rsc/analyze",
+    ".gemini/rsc/api-design",
+    ".gemini/rsc/asdd",
+    ".gemini/rsc/automation-strategy",
+    ".gemini/rsc/clarify",
+    ".gemini/rsc/connect-tool",
+    ".gemini/rsc/constitution",
+    ".gemini/rsc/debug",
+    ".gemini/rsc/decision-challenge",
+    ".gemini/rsc/deprecation",
+    ".gemini/rsc/design",
+    ".gemini/rsc/docker",
+    ".gemini/rsc/embeddings-search",
+    ".gemini/rsc/fable-operator",
+    ".gemini/rsc/ftd",
+    ".gemini/rsc/go",
+    ".gemini/rsc/harness",
+    ".gemini/rsc/idea-refinement",
+    ".gemini/rsc/implement",
+    ".gemini/rsc/init",
+    ".gemini/rsc/observability",
+    ".gemini/rsc/orient",
+    ".gemini/rsc/parallel",
+    ".gemini/rsc/plan",
+    ".gemini/rsc/postgresdb",
+    ".gemini/rsc/review",
+    ".gemini/rsc/sdd-init",
+    ".gemini/rsc/security-audit",
+    ".gemini/rsc/ship",
+    ".gemini/rsc/simplify-code",
+    ".gemini/rsc/source-grounded-development",
+    ".gemini/rsc/specify",
+    ".gemini/rsc/suggest",
+    ".gemini/rsc/tasks",
+    ".gemini/rsc/testing-go",
+    ".gemini/rsc/tidy",
+    ".gemini/rsc/unslop",
+    ".gemini/rsc/ux",
+    ".gemini/rsc/vector-db",
+    ".gemini/rsc/verify",
+    ".gemini/rsc/worktrees"
+  ]
 }
