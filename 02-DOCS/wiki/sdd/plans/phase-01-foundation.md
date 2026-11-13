@@ -287,7 +287,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 - Produces:
   - `migrations/00001_romero_core_schema.sql` with tables `tenants`, `projects`, `agents`, `principals`, `memory_sources`, `memories`, `memory_versions` (autocontenida con `summary`, `content`, `tags`, `entities`, `metadata`, `epistemic_status`, `alpha_score`, `beta_score`, `importance`, `utility_score`, `status`, `valid_from TIMESTAMPTZ NOT NULL`, `valid_until TIMESTAMPTZ`, `changed_by_source`, `change_reason`, `created_at`), `memory_embeddings`, `memory_relations`, `memory_feedback`, `memory_jobs`, `audit_events`.
   - Partitioned active `topic_key` unique index:
-    `CREATE UNIQUE INDEX idx_memories_active_topic_key ON memories(tenant_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid), scope_type, CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END, CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END, topic_key) WHERE status = 'active' AND topic_key IS NOT NULL;`
+    `CREATE UNIQUE INDEX idx_memories_active_topic_key ON memories(tenant_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid), scope_type, (CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END), (CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END), topic_key) WHERE status = 'active' AND topic_key IS NOT NULL;`
 
 **T002 — Interfaces**
 - Consumes: Go standard library + `github.com/google/uuid` (from `T001`).
