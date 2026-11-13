@@ -53,3 +53,11 @@
 - tracker: https://github.com/CodeMonkReaper/romero/issues/1#issuecomment-6867770727; control sqlc transferido con autorización humana a https://github.com/CodeMonkReaper/romero/issues/4#issuecomment-6867601911.
 - review-ledger: panel correctness/security/tests registrado sobre 30ad02d. Una ejecución de cada lente; el CLI registra round 2 tras asociar el panel al commit final (el registro inicial estaba sobre la base 026b599).
 - next: aprobación humana e integración del PR; Issue #1 permanece abierto hasta la integración requerida. T001 validada no implica Phase 01 completada.
+
+## T001 — aprobación e integración en rama de fase — 2026-11-13
+- status: integrated-in-phase-branch; entrega a main pendiente.
+- human-approval: el usuario respondió «apruebo» a integrar el PR #11 en feat/phase-01-foundation.
+- merged: https://github.com/CodeMonkReaper/romero/pull/11; commit aec3b398ef011f1ece783c4c66de17b4ea9e44fa. GitHub confirmó merged=true sobre head esperado 9352cf6554eed9f564665f687d79ed149fcb6dd3; base limpia y mergeable, sin checks CI configurados.
+- controls: mismo código verificado y revisado; merge sin conflictos sobre la base original 026b599. No se modificó main ni la carpeta de la sesión concurrente.
+- decision-queue: la validación PostgreSQL de DQ-01 ya tiene evidencia runtime y aprobación de integración humana; no queda bloqueada por Docker. sqlc permanece diferido explícitamente a T004.
+- next: entrega del trabajo base de T001 desde la rama de fase a main con sus controles de cierre; mantener Issue #1 abierto hasta esa entrega. No se declara Phase 01 completada.
