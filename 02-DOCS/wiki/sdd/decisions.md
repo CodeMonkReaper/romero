@@ -1,5 +1,17 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-14 — Aprobación de contratos técnicos de tarea
+
+El usuario aprobó el puerto de permisos, la cola durable, el uso de reservas con token, la transacción de mutación y resultado, la ruta de consulta propuesta y la regla de que solicitudes opacas sin clave de idempotencia son independientes. Fuente: [plan de autorización](plans/phase-01-task-authorization-draft.md). La aprobación no reemplaza la puerta de análisis ni la revisión de implementación.
+
+## 2026-11-14 — Escrituras opacas asíncronas (Phase 01)
+
+Contexto — Una escritura sin lectura no debe revelar si un ID o conflicto existe ni afirmar falsamente que se aplicó. Decisión humana: aceptación durable `202` con identificador opaco para toda escritura autorizada sin lectura; reautorización en el trabajador, estado legible solo con permiso vigente, tres reintentos y retención configurable. El usuario aprobó incorporar esta ampliación y la ruta REST de estado. La idempotencia opaca se separa de la captura normal y se limita a tenant y principal. La [enmienda de especificación](specs/phase-01-task-authorization-draft.md) y su [plan](plans/phase-01-task-authorization-draft.md) recogen los límites; firmas y análisis quedan pendientes.
+
+## 2026-11-13 — Autorización explícita para task_shared (Phase 01)
+
+Contexto — La revisión de T002 detectó que conocer un task_id no prueba autorización. Opciones consideradas: acceso por proyecto, credencial por tarea o asignaciones del servidor. Decisión humana: asignaciones verificadas en PostgreSQL, lectura y escritura independientes, comprobadas por el servicio usando la identidad autenticada y el recurso; administración mediante bootstrap/CLI con auditoría transaccional. Enmiendas: [spec](specs/phase-01-task-authorization-draft.md) y [plan](plans/phase-01-task-authorization-draft.md). El usuario aprobó las reglas y el diseño para integrarlos. La implementación y el análisis siguen pendientes.
+
 ## 2026-11-13 — Representaciones de dominio T002
 
 Contexto — El plan fija las operaciones públicas, pero deja abiertas representaciones auxiliares.
@@ -121,3 +133,9 @@ Registro append-only de las decisiones arquitectónicas y de especificación tom
 - Decisión humana: el usuario respondió «Sí, diferir sqlc a T004» a la solicitud de autorización de este control para cerrar T001 cuando terminen revisión y entrega.
 - Por qué: respeta el alcance del plan y mantiene la generación SQL como condición de cierre obligatoria de T004. El comando fallido sigue registrado, no se informa como aprobado.
 - Entorno: se usa PostgreSQL desechable separado del servicio Compose para validar la misma migración sin afectar la sesión concurrente. Las pruebas race usan GCC en contenedor; el binario de producto sigue compilándose con CGO_ENABLED=0.
+
+## 2026-11-14 — Reconciliación del contrato de T002 con T004 y T011
+
+- T004 corrige la frontera de unicidad por inquilino en una migración posterior. Ante duplicados históricos, la migración revierte y conserva los registros para que el operador los resuelva.
+- La consulta vigente de permisos define el momento de autorización. El trabajador vuelve a comprobar antes de mutar y confirma los efectos solo si conserva una reserva válida.
+- AC-T7 a AC-T12 reúnen las decisiones aprobadas sobre aceptación, claves, ejecución, estado y retención. T002 entrega política y puerto de dominio. El adaptador PostgreSQL, HTTP y el trabajador tienen tareas y pruebas propias. [Plan de la enmienda](plans/phase-01-task-authorization-draft.md).
