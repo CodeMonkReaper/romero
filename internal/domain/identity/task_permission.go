@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -51,7 +52,7 @@ func (a AuthContext) AuthorizeTaskMemory(ctx context.Context, store TaskPermissi
 		TaskID: target.TaskID, Permission: permission,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrTaskPermissionsUnavailable, err)
 	}
 	if !allowed {
 		return ErrForbidden

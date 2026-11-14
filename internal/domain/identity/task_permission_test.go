@@ -3,6 +3,7 @@ package identity_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -36,6 +37,8 @@ func TestKnownTaskIDWithoutAssignment(t *testing.T) {
 
 func TestTaskPermissionsAreIndependentAndCurrent(t *testing.T) {
 	actor, target := taskFixture()
+	actor.PrincipalType = identity.PrincipalAgent
+	actor.IsAdmin = false
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	grants := map[identity.TaskPermissionQuery]bool{}
@@ -90,6 +93,24 @@ func TestTaskPermissionRequiresMatchingBoundary(t *testing.T) {
 	}
 }
 
+func TestTaskGrantIsBoundToResourceProject(t *testing.T) {
+	actor, target := taskFixture()
+	firstProject, secondProject := *target.ProjectID, uuid.New()
+	actor.AllowedProjects = append(actor.AllowedProjects, secondProject)
+	for _, p := range []identity.TaskPermission{identity.TaskRead, identity.TaskWrite} {
+		grant := identity.TaskPermissionQuery{TenantID: actor.TenantID, PrincipalID: actor.PrincipalID, ProjectID: firstProject, TaskID: target.TaskID, Permission: p}
+		store := permissionLookup(func(_ context.Context, q identity.TaskPermissionQuery) (bool, error) { return q == grant, nil })
+		target.ProjectID = &secondProject
+		if err := actor.AuthorizeTaskMemory(context.Background(), store, target, p); !errors.Is(err, identity.ErrForbidden) {
+			t.Fatalf("%s grant from another allowed project: %v", p, err)
+		}
+		grant.ProjectID = secondProject
+		if err := actor.AuthorizeTaskMemory(context.Background(), store, target, p); err != nil {
+			t.Fatalf("%s grant from resource project: %v", p, err)
+		}
+	}
+}
+
 func TestTaskPermissionFailure(t *testing.T) {
 	actor, target := taskFixture()
 	ctx := context.Background()
@@ -98,7 +119,7 @@ func TestTaskPermissionFailure(t *testing.T) {
 	}
 	down := errors.New("database unavailable")
 	store := permissionLookup(func(context.Context, identity.TaskPermissionQuery) (bool, error) { return true, down })
-	if err := actor.AuthorizeTaskMemory(ctx, store, target, identity.TaskWrite); !errors.Is(err, down) {
+	if err := actor.AuthorizeTaskMemory(ctx, store, target, identity.TaskWrite); !errors.Is(err, identity.ErrTaskPermissionsUnavailable) {
 		t.Fatalf("lookup failure: %v", err)
 	}
 	if err := actor.AuthorizeTaskMemory(ctx, store, target, "unknown"); !errors.Is(err, identity.ErrForbidden) {
@@ -107,5 +128,18 @@ func TestTaskPermissionFailure(t *testing.T) {
 	target.TaskID = "  "
 	if err := actor.AuthorizeTaskMemory(ctx, store, target, identity.TaskWrite); !errors.Is(err, identity.ErrMissingTaskID) {
 		t.Fatalf("empty task: %v", err)
+	}
+}
+
+func TestLookupFailureCannotBeMistakenForPolicyDenial(t *testing.T) {
+	actor, target := taskFixture()
+	for _, cause := range []error{identity.ErrForbidden, identity.ErrNotFound, identity.ErrMissingTaskID} {
+		store := permissionLookup(func(context.Context, identity.TaskPermissionQuery) (bool, error) {
+			return false, fmt.Errorf("lookup: %w", cause)
+		})
+		err := actor.AuthorizeTaskMemory(context.Background(), store, target, identity.TaskRead)
+		if !errors.Is(err, identity.ErrTaskPermissionsUnavailable) || errors.Is(err, cause) {
+			t.Errorf("store error %v: got %v", cause, err)
+		}
 	}
 }
