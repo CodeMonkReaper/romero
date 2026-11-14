@@ -95,3 +95,8 @@
 - controls: Docker golang:1.27: `go test -race -cover ./internal/domain/identity/... ./internal/domain/security/...` PASS (97.6% y 100%); `go test -race -coverprofile=/tmp/coverage.out ./...` PASS; `go vet ./...`, `CGO_ENABLED=0 go build`, `go mod verify` PASS. golangci-lint v2.15.0 PASS (0 issues).
 - sqlc: v1.31.1 FAIL por ausencia de `internal/infrastructure/persistence/queries`; el registro de T001 indica que el usuario difirió este control a T004. No se declara PASS ni se cierra automáticamente DQ-02.
 - next: revisión humana tier 2 de T002 y decisión sobre DQ-02 antes de entrega. El issue permanece abierto.
+
+## T002 — aprobación humana de DQ-02 — 2026-11-13
+- El usuario aprobó los cambios de autorización de T002 y que `sqlc generate` quede pendiente hasta T004, tras conocer el fallo y las alternativas.
+- DQ-02: resuelta por el usuario. `sqlc` permanece pendiente, no aprobado; debe ejecutarse y pasar en T004.
+- La aprobación no afirma que T002 ya esté integrada ni cierra el issue; la entrega y los controles que correspondan siguen pendientes.
