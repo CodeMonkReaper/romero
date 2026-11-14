@@ -25,4 +25,4 @@ Base local: fed8746. PR #15 fusionado y Issue #2 cerrado, comprobados mediante G
 Correcciones locales verificadas: regresión roja/verde; SQL real con rechazo legacy atómico, preservación de principal válido y Up/Down/Up; race, vet, build, módulos, lint y vulnerabilidades PASS. Panel de tres revisores PASS; tres mutantes detectados. [Verificación](../sdd/verifications/t001-t002-corrections-2026-11-14.md) y [revisión](../sdd/reviews/t002-final-delta-2026-11-14.md). sqlc diferido a T004, Goose no ejecutado. No se tocó una base del usuario.
 
 ## Next
-Corrección local lista para revisar en main. No hay commit ni publicación remota; Issue #16 queda abierto hasta entrega. El usuario decide cuándo publicar. Phase 01 sigue pendiente.
+El usuario autorizó guardar las correcciones en un commit local en main. Publicación remota pendiente; Issue #16 queda abierto hasta entrega. Phase 01 sigue pendiente.
