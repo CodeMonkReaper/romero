@@ -22,6 +22,7 @@ const (
 )
 
 var (
+	ErrMissingID               = errors.New("id is required")
 	ErrMissingTenant           = errors.New("tenant_id is required")
 	ErrInvalidSourceType       = errors.New("invalid source_type")
 	ErrMissingExternalSourceID = errors.New("external_source_id is required")
@@ -61,6 +62,9 @@ func (s SourceType) Valid() bool {
 
 // Validate checks immutable provenance invariants required by Principio 15.
 func (m MemorySource) Validate() error {
+	if m.ID == uuid.Nil {
+		return ErrMissingID
+	}
 	if m.TenantID == uuid.Nil {
 		return ErrMissingTenant
 	}

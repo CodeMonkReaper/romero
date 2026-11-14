@@ -74,6 +74,13 @@ func TestMemorySourceValidate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "missing id",
+			mutate: func(s *provenance.MemorySource) {
+				s.ID = uuid.Nil
+			},
+			wantErr: provenance.ErrMissingID,
+		},
+		{
 			name: "missing tenant_id",
 			mutate: func(s *provenance.MemorySource) {
 				s.TenantID = uuid.Nil
