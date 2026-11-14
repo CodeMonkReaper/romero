@@ -10,6 +10,8 @@ Mapa central del conocimiento del proyecto **ROMERO**.
 
 ## Harness (`harness/`)
 
+Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../docs/agents/rsc-matt-workflow.md), [tracker](../../../docs/agents/issue-tracker.md), [registro de configuración](ftd/github-issues-integration.md).
+
 | Documento | Ruta |
 | :--- | :--- |
 | Perfil de usuario y objetivo del proyecto | `02-DOCS/wiki/harness/user-profile.md` |

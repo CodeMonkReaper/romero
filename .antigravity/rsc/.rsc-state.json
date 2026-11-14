@@ -250,7 +250,13 @@
   "agents": [],
   "agentCollisions": [],
   "agentsKept": [],
-  "explicitAgents": [],
+  "explicitAgents": [
+    "developer",
+    "finding-verifier",
+    "refuter-correctness",
+    "refuter-security",
+    "refuter-tests"
+  ],
   "memory": {
     "mode": "unsupported",
     "reason": "no-local-lifecycle",
@@ -280,7 +286,7 @@
   },
   "commands": [],
   "commandCollisions": [],
-  "version": "4.1.2",
+  "version": "4.1.6",
   "ignoreEntriesAdded": [
     ".antigravity/rsc/.rsc-state.json",
     ".antigravity/rsc/analyze",

@@ -256,7 +256,13 @@
   ],
   "agentCollisions": [],
   "agentsKept": [],
-  "explicitAgents": [],
+  "explicitAgents": [
+    "developer",
+    "finding-verifier",
+    "refuter-correctness",
+    "refuter-security",
+    "refuter-tests"
+  ],
   "memory": {
     "mode": "degraded",
     "reason": "config-tracked",
@@ -304,7 +310,7 @@
     "verify"
   ],
   "commandCollisions": [],
-  "version": "4.1.2",
+  "version": "4.1.6",
   "ignoreEntriesAdded": [
     ".opencode/agents/developer.md",
     ".opencode/agents/finding-verifier.md",

@@ -124,3 +124,7 @@ Habla con la voz de `orient`: frases cortas, una idea por frase, al grano, y cad
 **rsc updates.** Claude Code, Codex, Gemini CLI, Cursor and OpenCode check for a new rsc on their own. In any other assistant, run `node .rsc/auto-update.mjs` once on the first turn of a session and relay any notice it prints in one line; "up to date" needs no mention.
 
 <!-- rsc-suggest:end -->
+
+## Agent skills integration
+
+For GitHub Issues, ticket publication, implementation or PR delivery, first read `docs/agents/rsc-matt-workflow.md`. It defines rsc/Matt routing, canonical records and checkpoint updates. Tracker operations: `docs/agents/issue-tracker.md`. Triage vocabulary: `docs/agents/triage-labels.md`. Domain references: `docs/agents/domain.md`.
