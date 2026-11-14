@@ -14,6 +14,8 @@ status: approved
 > Spec: [../specs/phase-01-foundation.md](../specs/phase-01-foundation.md) · Constitution: [../constitution.md](../constitution.md) · Status: approved
 > Last updated: 2026-11-11
 
+> **Enmienda aprobada — autorización por tarea (2026-11-13):** [Plan de autorización por tarea](phase-01-task-authorization-draft.md), basado en la [enmienda de especificación](../specs/phase-01-task-authorization-draft.md). Complementa las tareas T002 y T004–T009. Donde este documento describa únicamente `callerTaskID`, permiso de proyecto/ámbito o respuestas de escritura completas, prevalece la enmienda. El contrato y los done-checks modificados requieren `tasks` y `analyze` antes de implementación; el T002 existente no cumple aún la enmienda.
+
 ## 0. Global Constraints
 
 - **Lenguaje y compilación (`constitution §1 #1`):** Go `1.23+` estricto con `CGO_ENABLED=0` obligatorio en compilación y pruebas (`CGO_ENABLED=0 go build ./cmd/romero`). Cero enlaces a librerías `.dll`, `.so` o `.dylib`.
@@ -29,7 +31,7 @@ status: approved
 - **Opacidad anti-enumeración Zero-Trust (`spec §Behaviour`, `AC-01`):**
   - Credencial ausente, expirada, inactiva o inválida $\rightarrow$ `401 Unauthorized` + registro en `audit_events`.
   - Intento de crear en un proyecto/ámbito sin permiso de escritura o solicitar `epistemic_status = verified` siendo `principal_type = agent` $\rightarrow$ `403 Forbidden` + `audit_events(outcome = 'denied')`.
-  - Intento de leer o mutar por UUID (`GetMemory`, `UpdateMemory`, `SupersedeMemory`, `ArchiveMemory`, `RecordFeedback`) un recuerdo que pertenece a otro `tenant_id`, otro `project_id`, otro `owner_agent_id` (`agent_private`) u otro `task_id` (`task_shared`) $\rightarrow$ `404 Not Found` al cliente + `audit_events(outcome = 'denied')`.
+  - Intento de leer o mutar por UUID (`GetMemory`, `UpdateMemory`, `SupersedeMemory`, `ArchiveMemory`, `RecordFeedback`) un recuerdo que pertenece a otro `tenant_id`, otro `project_id`, otro `owner_agent_id` (`agent_private`) u otro `task_id` (`task_shared`) $\rightarrow$ `404 Not Found` al cliente + `audit_events(outcome = 'denied')`. La aceptación de escritura `task_shared` sin lectura usa el contrato `202` de AC-T7 antes de resolver el UUID. El trabajador aplica AC-T9.
 - **Jerarquía epistemológica y priors bayesianos $\text{Beta}(\alpha_0, \beta_0)$ (`constitution §5 #15`, `spec §Acceptance AC-04`):**
   - `verified` ($\text{Rank} = 5$): $\alpha_0 = 19.0, \beta_0 = 1.0 \Rightarrow \hat{\theta}_0 = 0.95$. Solo asignable por `principal_type IN ('user', 'orchestrator', 'service')`.
   - `observed` ($\text{Rank} = 4$): $\alpha_0 = 8.5, \beta_0 = 1.5 \Rightarrow \hat{\theta}_0 = 0.85$. Tope máximo para `principal_type = 'agent'`.
@@ -118,7 +120,7 @@ status: approved
 ```
 
 - **CLI Adapter (`internal/interfaces/cli`, INTERNAL):** Expone los comandos operativos (`migrate`, `bootstrap`, `principal create`, `serve`) para inicializar el esquema y aprovisionar identidades Zero-Trust sin abrir endpoints HTTP de administración (`AC-10`).
-- **REST API Adapter (`internal/interfaces/rest`, INTERNAL):** Valida esquemas de entrada/salida OpenAPI 3.1 y expone las operaciones del ciclo de vida de recuerdos (`/api/v1/memories`, `/api/v1/memories/{id}`, `/api/v1/memories/{id}/supersede`, `/api/v1/memories/{id}/archive`, `/api/v1/memories/feedback`, `/api/v1/system/status`).
+- **REST API Adapter (`internal/interfaces/rest`, INTERNAL):** Valida esquemas de entrada/salida OpenAPI 3.1 y expone las operaciones del ciclo de vida de recuerdos (`/api/v1/memories`, `/api/v1/memories/{id}`, `/api/v1/memories/{id}/supersede`, `/api/v1/memories/{id}/archive`, `/api/v1/memories/feedback`, `/api/v1/system/status`, `/api/v1/memory-requests/{request_id}`).
 - **Zero-Trust AuthMiddleware (`internal/interfaces/rest/middleware`, INTERNAL):** Extrae la credencial de la petición, calcula su huella `SHA-256`, resuelve el `AuthContext` inmutable desde la base de datos y rechaza credenciales inválidas o expiradas con `401 Unauthorized` auditado.
 - **Application Layer (`internal/application/{provisioning,capture,retrieval,feedback}`, INTERNAL):** Orquesta transacciones atómicas combinando validación de políticas de ámbito, sanitización, idempotencia, supersesión jerárquica, instantáneas de versión, encolado de trabajos y emisión de eventos de auditoría.
 - **Domain Core (`internal/domain/{identity,memory,provenance,security}`, INTERNAL):** Implementa en Go puro las reglas matemáticas e invariantes (jerarquía epistemológica $5..1$, distribución $\text{Beta}(\alpha,\beta)$, cuarentena $\hat{\theta} < 0.30$, validación de los 3 relojes, matriz de visibilidad de los 5 ámbitos y sanitización/encapsulamiento XML).
@@ -191,7 +193,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 - **Tenant / Project / Agent / Principal:** Identidades organizacionales y criptográficas. `Principal` almacena `principal_type` (`user`, `service`, `orchestrator`, `agent`), `api_key_prefix`, `api_key_sha256` (único), `allowed_projects`, `allowed_scopes` y `expires_at`.
 - **MemorySource:** Procedencia obligatoria e inmutable (`tenant_id`, `project_id`, `source_type`, `external_source_id`, `actor_principal_id`, `actor_agent_id`, `uri`, `raw_excerpt_hash`).
 - **Memory:** Registro central con clasificación (`memory_type`, `scope_type`, `status`, `topic_key`), propietarios de ámbito (`tenant_id`, `project_id`, `owner_agent_id`, `task_id`), contenido (`summary`, `content`, `content_sha256`, `token_count`, `tags`, `entities`), calibración bayesiana (`epistemic_status`, `alpha_score`, `beta_score`, `confidence` generada como $\frac{\alpha}{\alpha+\beta}$, `importance`, `utility_score`), procedencia (`primary_source_id`, `idempotency_key`) y los tres relojes (`observed_at`, `created_at`, `valid_from`, `valid_until`).
-  - *Frontera de unicidad de `topic_key` activa:* Índice único parcial sobre recuerdos con `status = 'active' AND topic_key IS NOT NULL` particionado por `(tenant_id, COALESCE(project_id, nil_uuid), scope_type, COALESCE(owner_agent_id, nil_uuid) cuando agent_private, COALESCE(task_id, '') cuando task_shared, topic_key)`.
+  - *Frontera de unicidad de `topic_key` activa.* Incluir inquilino, ámbito y clave. Incluir proyecto para `agent_private`, `task_shared` y `project_shared`, además de agente privado o tarea cuando corresponda. T004 corrige el índice inicial y T006 usa la misma frontera para buscar y bloquear.
 - **MemoryVersion:** Historial inmutable de instantáneas autocontenidas por `(memory_id, version)` registrando `summary`, `content`, `tags`, `entities`, `metadata`, `epistemic_status`, `alpha_score`, `beta_score`, `importance`, `utility_score`, `status`, `valid_from`, `valid_until`, `changed_by_source`, `change_reason` y `created_at` (reloj de transacción de esa versión para consultas *Point-in-Time*). En `UpdateMemory` ($v \rightarrow v+1$ en $t_u$), la versión $v$ cierra su `valid_until = t_u` en `memory_versions` y la versión $v+1$ se abre con `valid_from = t_u` y `valid_until = NULL`, encadenando intervalos sin solapamiento.
 - **MemoryRelation:** Aristas dirigidas bitemporales (`from_memory_id`, `to_memory_id`, `relation_type` en `{'supports', 'contradicts', 'supersedes', 'caused_by', 'depends_on', 'derived_from', 'related_to'}`, `weight`, `valid_from`, `valid_until`, `is_active`).
 - **MemoryFeedback:** Registro inmutable de señales empíricas (`memory_id`, `agent_id`, `task_id`, `signal`, `alpha_delta`, `beta_delta`, `utility_delta`, `comment`, `created_at`).
@@ -206,7 +208,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 4. Dentro de una transacción ACID en PostgreSQL:
    - Si viene `idempotency_key`, busca en `memories` por `(tenant_id, idempotency_key)`: si existe y coinciden `content_sha256` y `scope_type`, hace commit de lectura y devuelve `200 OK`; si difieren, aborta y devuelve `409 Conflict`.
    - Inserta `memory_sources`.
-   - Si viene `topic_key`, bloquea con `SELECT ... FOR UPDATE` el recuerdo `active` existente en la misma partición de ámbito (`tenant_id`, `project_id`, `scope_type`, `owner_agent_id`/`task_id`, `topic_key`):
+   - Si viene `topic_key`, bloquea con `SELECT ... FOR UPDATE` el recuerdo `active` existente en la misma partición de ámbito según la frontera de unicidad del modelo de datos:
      - Si existe y $\text{Rank}(M_{\text{new}}) \ge \text{Rank}(M_{\text{old}})$: actualiza $M_{\text{old}}$ (`status = 'superseded'`, `valid_until = now`, `version += 1`), inserta instantánea en `memory_versions`, inserta $M_{\text{new}}$ (`status = 'active'`, `version = 1`), inserta su `v1` en `memory_versions` e inserta arista `supersedes` en `memory_relations`.
      - Si existe y $\text{Rank}(M_{\text{new}}) < \text{Rank}(M_{\text{old}})$: deja $M_{\text{old}}$ intacto, inserta $M_{\text{new}}$ (`status = 'conflicted'`, `version = 1`), inserta su `v1` en `memory_versions` e inserta arista `contradicts` en `memory_relations`.
      - Si no existe: inserta $M_{\text{new}}$ (`status = 'active'`, `version = 1`) y su `v1` en `memory_versions`.
@@ -241,7 +243,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 3. **Consultas SQL compiladas (`internal/infrastructure/persistence/queries/*.sql` + `sqlc generate`) y adaptador transaccional PostgreSQL (`pgxpool`, `UnitOfWork`, repositorios de identidades, fuentes, recuerdos, versiones, relaciones, feedback, jobs y auditoría)** — depends on: #1 — `[parallelizable con #2]`
 4. **Servicio de aprovisionamiento Zero-Trust (`ProvisioningService`), autenticador `SHA-256` (`Authenticator`) y comandos CLI (`romero migrate`, `romero bootstrap`, `romero principal create`) (`AC-10`)** — depends on: #2, #3 — `[serial]`
 5. **Servicios de aplicación de ciclo de vida y gobernanza (`CaptureService`, `RetrievalService` con soporte *Point-in-Time* `valid_at`/`known_at`, y `FeedbackService` con cuarentena síncrona) (`AC-01` a `AC-09`)** — depends on: #2, #3, #4 — `[serial]`
-6. **Adaptador HTTP REST con `Huma v2` (OpenAPI 3.1), middleware Zero-Trust y comando `romero serve` (`/api/v1/memories/*`, `/api/v1/system/status`)** — depends on: #4, #5 — `[serial]`
+6. **Adaptador HTTP REST con `Huma v2` (OpenAPI 3.1), middleware Zero-Trust y comando `romero serve` (`/api/v1/memories/*`, `/api/v1/system/status`, `/api/v1/memory-requests/{request_id}`)** — depends on: #4, #5 — `[serial]`
 7. **Suite completa de pruebas de integración, concurrencia y seguridad Zero-Trust ($0.00\%$ fuga, colisiones de `idempotency_key` y `topic_key`, *Point-in-Time* y sanitización XML) contra PostgreSQL 17 real** — depends on: #6 — `[serial]`
 
 - **Candidatos paralelos:** Los pasos **#2** (dominio puro en Go y pruebas unitarias) y **#3** (consultas SQL `sqlc` y adaptadores de persistencia) operan sobre directorios disjuntos (`internal/domain/**` vs. `internal/infrastructure/persistence/**`) sin estado compartido.
@@ -267,6 +269,8 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 ## Tasks
 <!-- generated by tasks on 2026-11-11; IDs are stable, do not renumber -->
 
+**Cambio de alcance aprobado:** la tabla original conserva los identificadores y criterios históricos. T002 y T004–T009 incorporan los criterios adicionales de la [enmienda](phase-01-task-authorization-draft.md), que también añade T011 para el trabajador durable; los done-checks de abajo por sí solos ya no bastan. T008 depende además de T011 y el cierre T010 depende de T011. Los contratos y pruebas adicionales se detallan en la enmienda.
+
 | ID | [P] | Task | Done-check | Depends-on | Trace | Risk |
 | --- | --- | --- | --- | --- | --- | --- |
 | T001 |  | Initialize Go 1.23+ module (`CGO_ENABLED=0`), base configs (`configs/romero.toml`, `docker-compose.yml`, `sqlc.yaml`, `Makefile`), entrypoint stub and Goose migration `migrations/00001_romero_core_schema.sql` | `CGO_ENABLED=0 go build ./cmd/romero` exits 0 AND `migrations/00001_romero_core_schema.sql` applies cleanly on PostgreSQL 17 with partitioned `idx_memories_active_topic_key` and `idx_memories_idempotency` | — | AC-01, AC-02, AC-03, AC-07, AC-10 | 2 |
@@ -276,9 +280,9 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 | T005 |  | Implement Zero-Trust `ProvisioningService`, `SHA-256` `Authenticator` and Cobra CLI commands (`romero migrate`, `romero bootstrap`, `romero principal create`) with unit tests (`internal/application/provisioning`, `internal/interfaces/cli`) | `go test -race -cover ./internal/application/provisioning/... ./internal/interfaces/cli/...` exits 0 with coverage >= 80% | T002, T003, T004 | AC-01, AC-10 | 1 |
 | T006 |  | Implement and unit-test `CaptureService` (`CaptureMemory`, `UpdateMemory`, `SupersedeMemory`, `ArchiveMemory`) enforcing idempotency hash check, partitioned `topic_key` supersession/conflict, closed-state immutability (`409`) and `embed_and_nli` job enqueueing (`internal/application/capture`) | `go test -race -cover ./internal/application/capture/...` exits 0 with coverage >= 85% | T002, T003, T004 | AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-09 | 1 |
 | T007 | [P] | Implement and unit-test `RetrievalService` (`GetMemory` current and Point-in-Time `as_of` / `valid_at` + `known_at` with XML wrapping) and `FeedbackService` (`RecordFeedback` with synchronous `< 0.30` quarantine) (`internal/application/retrieval`, `internal/application/feedback`) | `go test -race -cover ./internal/application/retrieval/... ./internal/application/feedback/...` exits 0 with coverage >= 85% | T002, T003, T004 | AC-01, AC-04, AC-07, AC-08, AC-09 | 1 |
-| T008 |  | Implement Huma v2 OpenAPI 3.1 REST server, Zero-Trust `AuthMiddleware`, lifecycle endpoints (`/api/v1/memories*`, `/api/v1/system/status`) and `romero serve` command with HTTP contract tests (`internal/interfaces/rest`) | `go test -race -cover ./internal/interfaces/rest/...` exits 0 AND OpenAPI 3.1 spec exposes only the canonical `/api/v1` memory/status routes | T005, T006, T007 | AC-01, AC-03, AC-04, AC-09, AC-10 | 2 |
+| T008 |  | Implement Huma v2 OpenAPI 3.1 REST server, Zero-Trust `AuthMiddleware`, lifecycle endpoints (`/api/v1/memories*`, `GET /api/v1/memory-requests/{request_id}`, `/api/v1/system/status`) and `romero serve` command with HTTP contract tests (`internal/interfaces/rest`) | `go test -race -cover ./internal/interfaces/rest/...` exits 0 AND OpenAPI 3.1 spec exposes only the canonical `/api/v1` memory/status routes | T005, T006, T007, T011 | AC-01, AC-03, AC-04, AC-09, AC-10, AC-T7, AC-T11, AC-T12 | 2 |
 | T009 |  | Implement and run full integration, concurrency and Zero-Trust cross-scope security test suite against real PostgreSQL 17 (`tests/integration`, `tests/security`) | `go test -race -v ./tests/integration/... ./tests/security/...` exits 0 against PostgreSQL 17 with 0.00% cross-scope leakage across all 10 ACs | T008 | AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-07, AC-08, AC-09, AC-10 | 1 |
-| T010 |  | All done-checks pass + full Level 1 & integration verification green | Every row `T001`–`T009` checked AND `sqlc generate`, `gofmt -s -w .`, `CGO_ENABLED=0 go build ./cmd/romero`, `go vet ./...`, `golangci-lint run`, and `go test -race -coverprofile=coverage.out ./...` exit 0 with >= 80% coverage in `domain`/`application` | T001, T002, T003, T004, T005, T006, T007, T008, T009 | all ACs | — |
+| T010 |  | All done-checks pass + full Level 1 & integration verification green | Every row `T001`–`T009` and `T011` checked AND `sqlc generate`, `gofmt -s -w .`, `CGO_ENABLED=0 go build ./cmd/romero`, `go vet ./...`, `golangci-lint run`, and `go test -race -coverprofile=coverage.out ./...` exit 0 with >= 80% coverage in `domain`/`application` | T001, T002, T003, T004, T005, T006, T007, T008, T009, T011 | all ACs | — |
 
 ### Per-Task Interfaces
 
@@ -286,7 +290,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 - Consumes: `constitution.md` stack floors (`Go 1.23+`, `PostgreSQL 17`, `pgvector 0.8.0+`, `pg_trgm`, `btree_gist`, `pgcrypto`).
 - Produces:
   - `migrations/00001_romero_core_schema.sql` with tables `tenants`, `projects`, `agents`, `principals`, `memory_sources`, `memories`, `memory_versions` (autocontenida con `summary`, `content`, `tags`, `entities`, `metadata`, `epistemic_status`, `alpha_score`, `beta_score`, `importance`, `utility_score`, `status`, `valid_from TIMESTAMPTZ NOT NULL`, `valid_until TIMESTAMPTZ`, `changed_by_source`, `change_reason`, `created_at`), `memory_embeddings`, `memory_relations`, `memory_feedback`, `memory_jobs`, `audit_events`.
-  - Partitioned active `topic_key` unique index:
+  - Índice inicial de T001. T004 lo sustituye según AC-02 antes de integrar los servicios:
     `CREATE UNIQUE INDEX idx_memories_active_topic_key ON memories(tenant_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid), scope_type, (CASE WHEN scope_type = 'agent_private' THEN COALESCE(owner_agent_id, '00000000-0000-0000-0000-000000000000'::uuid) ELSE '00000000-0000-0000-0000-000000000000'::uuid END), (CASE WHEN scope_type = 'task_shared' THEN COALESCE(task_id, '') ELSE '' END), topic_key) WHERE status = 'active' AND topic_key IS NOT NULL;`
 
 **T002 — Interfaces**
@@ -294,7 +298,7 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
 - Produces:
   - `identity.PrincipalType` (`user`, `service`, `orchestrator`, `agent`), `identity.ScopeType` (`agent_private`, `task_shared`, `project_shared`, `org_shared`, `global_public`), `identity.AuthContext{TenantID, PrincipalID, PrincipalType, AgentID, AllowedProjects, AllowedScopes, IsAdmin}`.
   - `identity.AuthContext.CanWriteScope(projectID *uuid.UUID, scope ScopeType, taskID string) error` (`ErrForbidden` -> 403, `ErrMissingTaskID` -> 422).
-  - `identity.AuthContext.CanReadMemory(m MemoryScopeTarget, callerTaskID string) bool` (if false on existing UUID -> caller audits `denied` and returns `ErrNotFound` 404).
+  - Contrato anterior `CanReadMemory(m MemoryScopeTarget, callerTaskID string) bool` **sustituido** para `task_shared`: conocer `callerTaskID` no demuestra autorización. Aplican el puerto y comprobación descritos en la enmienda; la firma de `TaskPermissionReader` figura en T002 de esa enmienda.
   - `identity.AuthContext.CanAssignEpistemic(status string) error` (`agent` requesting `verified` -> `ErrForbidden` 403).
   - `security.SanitizeInput(summary, content string) (SanitizedPayload{Summary, Content, ContentSHA256 string, TokenCount int, Sanitized bool}, error)` and `security.WrapUntrustedXML(id uuid.UUID, memType, epistemic string, confidence float32, sourceRef, content string) string`.
 
@@ -346,7 +350,8 @@ feedback.Service.RecordFeedback(ctx: AuthContext, cmd: FeedbackCommand) -> Feedb
     - `POST /api/v1/memories/{id}/archive`
     - `POST /api/v1/memories/feedback` (with optional `replacement_memory` for `corrected_by_user`)
     - `GET /api/v1/system/status`
-  - Consistent HTTP error mapping (`401`, `403`, `404`, `409`, `422`).
+    - `GET /api/v1/memory-requests/{request_id}` (AC-T11)
+  - Escritura sin lectura autorizada y persistida devuelve `202` con `request_id`. Errores HTTP previstos: `401`, `403`, `404`, `409`, `422`, `503`.
 
 ## Review Workload Forecast
 

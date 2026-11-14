@@ -15,6 +15,8 @@ status: planned
 > Slug: `phase-01-foundation` · Status: planned · Created: 2026-11-11
 > Inherits: [constitution](../constitution.md)
 
+> **Enmienda aprobada — autorización por tarea (2026-11-13):** [Contrato de autorización por tarea](phase-01-task-authorization-draft.md). Sus reglas complementan AC-01 y prevalecen sobre cualquier frase anterior que pueda interpretarse como que conocer `task_id` basta para acceder. La ausencia de permiso de tarea exige denegación; lectura y escritura son independientes. Su implementación y verificación siguen pendientes.
+
 ## Problem & why
 
 Los sistemas multiagente de ingeniería sufren tres fallos estructurales cuando persisten conocimiento sin gobernanza en el servidor: fugas de contexto entre agentes, tareas o proyectos; envenenamiento epistemológico cuando una hipótesis exploratoria sobrescribe un hecho verificado; y ceguera histórica cuando una actualización destruye el registro previo e impide auditar qué sabía un agente en un instante pasado. Antes de activar motores de búsqueda híbrida, grafos en memoria o consolidación neuronal, ROMERO necesita un cimiento determinista que garantice aislamiento Zero-Trust con $0.00\%$ de fuga entre ámbitos, trazabilidad tri-temporal inmutable, captura idempotente con procedencia obligatoria, supersesión protegida por `topic_key` y calibración bayesiana $\text{Beta}(\alpha, \beta)$.
@@ -38,7 +40,7 @@ La alternativa mínima sería un almacén local de texto plano o clave-valor con
 
 ## Non-goals / out of scope
 
-- Endpoints HTTP REST para CRUD administrativo de inquilinos, proyectos, agentes o credenciales (el aprovisionamiento se realiza de forma declarativa en el arranque/semilla y por interfaz de línea de comandos local, preservando intacta la superficie de 13 endpoints REST de memoria).
+- Endpoints HTTP administrativos para inquilinos, proyectos, agentes, credenciales y asignaciones. Se administran mediante bootstrap y CLI local. La ampliación REST aprobada es `GET /api/v1/memory-requests/{request_id}`.
 - Búsqueda híbrida por trigramas, texto completo, vectores densos/dispersos ni reordenamiento con Cross-Encoder (corresponden a las fases de recuperación e inferencia).
 - Caché Cognitiva L1 en memoria y propagación de activación multi-salto sobre el grafo causal (corresponden a la fase de grafo y recuperación).
 - Detección automática de contradicciones semánticas mediante el clasificador neuronal NLI entre recuerdos con distinta `topic_key` (en esta fase los trabajos asíncronos quedan encolados con estado `pending` y `nli_checked = false`).
@@ -87,7 +89,7 @@ La alternativa mínima sería un almacén local de texto plano o clave-valor con
 
 - **Suite de pruebas unitarias de dominio y aplicación (Nivel 1 CPU):** Verifica matemáticamente la asignación de priors $(\alpha_0, \beta_0)$, las fórmulas de actualización bayesiana y de `utility_score` para cada señal de feedback, la transición automática a `conflicted` cuando $\hat{\theta} < 0.30$, la matriz de rangos epistemológicos ($1..5$), la validación de ventanas temporales, el rechazo de mutaciones sobre estados históricos cerrados y la sanitización determinista anti-inyección con cobertura $\ge 80\%$.
 - **Suite de pruebas de integración y seguridad Zero-Trust contra motor transaccional real:**
-  - Ejecuta una matriz exhaustiva de aislamiento cruzado entre dos inquilinos, dos proyectos, dos agentes (`agent_private`) y dos tareas (`task_shared`), comprobando $0.00\%$ de fuga en lecturas, mutaciones y colisiones de `topic_key`, verificando que los accesos cruzados por ID devuelvan `404 Not Found` y registren `denied` en auditoría.
+  - Ejecuta la matriz de AC-01 entre dos inquilinos, proyectos, agentes y tareas. Incluye la aceptación opaca de AC-T7 y la comprobación al ejecutar de AC-T9.
   - Comprueba la atomicidad ante escrituras concurrentes sobre la misma `topic_key` y la misma `idempotency_key` (confirmando que solo quede un recuerdo `active` por frontera de ámbito y que una colisión de `idempotency_key` con distinto contenido devuelva `409 Conflict`).
   - Verifica consultas *Point-in-Time* con los tres relojes (`valid_at` y `known_at`) antes y después de una actualización y de una supersesión, demostrando que las correcciones posteriores a `known_at` no alteran la respuesta histórica.
 
@@ -126,13 +128,13 @@ La alternativa mínima sería un almacén local de texto plano o clave-valor con
 - **Error paths:**
   - Credencial ausente, expirada, revocada o inválida: devuelve `401 Unauthorized` y registra el intento en auditoría.
   - Intento de escritura en un proyecto no autorizado, en `global_public` sin rol administrativo, o con `epistemic_status = verified` por parte de un principal `agent`: devuelve `403 Forbidden` y registra `denied` en auditoría.
-  - Intento de lectura, actualización, supersesión, archivado o feedback por ID sobre un recuerdo de otro inquilino, otro proyecto, otro `owner_agent_id` (`agent_private`) u otro `task_id` (`task_shared`): devuelve `404 Not Found` (sin revelar si el UUID existe) y registra `denied` en auditoría.
+  - Acceso por ID fuera del ámbito visible en operaciones síncronas: `404` auditado según AC-01. Para la escritura de tarea autorizada sin lectura se aplica AC-T7.
   - Ventana temporal inválida (`valid_until < valid_from`), ausencia de `task_id` en ámbito `task_shared`, exceso de longitud (`summary > 600` o `content > 65536` caracteres), contenido vacío tras sanitización o ausencia de datos de procedencia obligatoria: devuelve `422 Unprocessable Entity`.
   - Reutilización de `idempotency_key` con distinto `content_sha256` o `scope_type`, o intento de actualizar/superceder un recuerdo ya cerrado (`superseded`, `archived`, `rejected`): devuelve `409 Conflict`.
 
 ## Acceptance criteria
 
-- **AC-01 (Aislamiento Zero-Trust y opacidad anti-enumeración $0.00\%$ fuga):** Given un recuerdo creado por el Agente A en ámbito `agent_private` (o en `task_shared` para la Tarea 1, o en el Proyecto X), When el Agente B (o un agente de la Tarea 2, o del Proyecto Y, o de otro inquilino) intenta consultarlo, actualizarlo, supercederlo, archivarlo o enviarle feedback por su UUID, Then recibe `404 Not Found`, el recuerdo permanece intacto y se registra un evento en auditoría con `outcome = denied`.
+- **AC-01 (aislamiento y opacidad por ID).** En lecturas y mutaciones síncronas, un UUID ajeno y uno inexistente producen la misma respuesta `404` y un control de auditoría equivalente. Si ese control falla, ambos producen `503`. En escrituras `task_shared` sin lectura, autorizar la tarea indicada y devolver `202` después de guardar la solicitud, tanto si el objetivo existe como si es ajeno o está ausente. El trabajador vuelve a autorizar y verifica la pertenencia antes de mutar (AC-T7 y AC-T9). En ningún caso se modifica un recuerdo fuera de la frontera autorizada.
 - **AC-02 (Particionamiento de `topic_key` por propietario de ámbito y obligatoriedad de `task_id`):** Given que el Agente A tiene un recuerdo `active` con `topic_key = "debug/hypothesis"` en ámbito `agent_private`, When el Agente B captura un recuerdo en ámbito `agent_private` con la misma `topic_key = "debug/hypothesis"` dentro del mismo proyecto, Then ambos recuerdos quedan en estado `active` para sus respectivos propietarios sin supercederse ni generar conflicto entre sí; y When una solicitud intenta capturar en ámbito `task_shared` sin proporcionar `task_id`, Then recibe `422 Unprocessable Entity`.
 - **AC-03 (Idempotencia estricta con verificación de huella):** Given un recuerdo capturado con `idempotency_key = "req-001"`, When el mismo inquilino reenvía la solicitud con `idempotency_key = "req-001"` e idéntico contenido y ámbito, Then recibe `200 OK` con el mismo recuerdo y `version = 1` sin duplicar registros; y When reenvía `idempotency_key = "req-001"` con un contenido o ámbito diferente, Then recibe `409 Conflict`.
 - **AC-04 (Priors bayesianos canónicos y bloqueo de auto-verificación por agentes):** Given una solicitud de captura enviada por un principal de tipo `agent`, When solicita `epistemic_status = verified`, Then el sistema rechaza la operación con `403 Forbidden`; y When un principal autorizado captura recuerdos en cada uno de los 5 estados epistemológicos, Then sus priors iniciales $(\alpha_0, \beta_0)$ y confianza esperada $\hat{\theta}$ se inicializan exactamente en $(19.0, 1.0) \Rightarrow 0.95$ (`verified`), $(8.5, 1.5) \Rightarrow 0.85$ (`observed`), $(5.25, 2.25) \Rightarrow 0.70$ (`reported`), $(3.0, 2.0) \Rightarrow 0.60$ (`inferred`) y $(1.4, 2.6) \Rightarrow 0.35$ (`hypothesis`).
@@ -155,8 +157,8 @@ La alternativa mínima sería un almacén local de texto plano o clave-valor con
 
 - **2026-11-11 — Q1 (Aprovisionamiento de identidades Zero-Trust en Fase 01):**
   - *Pregunta:* ¿Cómo se dan de alta los inquilinos, proyectos, agentes y credenciales (`principals`) si la tabla de 13 endpoints REST (§14.1) no incluye endpoints HTTP de administración de identidades?
-  - *Decisión:* Bootstrap declarativo en arranque/semilla más subcomando CLI administrativo local, sin añadir endpoints REST fuera de los 13 canónicos (`AC-10`).
-  - *Por qué:* Preserva intacta la superficie de ataque HTTP y cumple el contrato de 13 endpoints de la Especificación Maestra.
+  - *Decisión:* Las altas se realizan mediante bootstrap o CLI. La enmienda incorpora únicamente la consulta HTTP de estado de solicitudes.
+  - *Por qué:* El operador puede gestionar identidades sin exponer operaciones administrativas por HTTP.
 - **2026-11-11 — Q2 (Validación de suposiciones tomadas e inmutabilidad de estados cerrados):**
   - *Pregunta:* ¿Se mantienen (1) `task_id` obligatorio en `task_shared` (`422`), (2) cuarentena bayesiana síncrona ($\hat{\theta} < 0.30 \rightarrow \text{conflicted}$) en `RecordFeedback`, y (3) rechazo con `409 Conflict` al intentar actualizar o volver a superceder recuerdos ya cerrados (`superseded`, `archived`, `rejected`)?
   - *Decisión:* Confirmadas las tres reglas e incorporadas en `AC-02`, `AC-06` y `AC-08`.

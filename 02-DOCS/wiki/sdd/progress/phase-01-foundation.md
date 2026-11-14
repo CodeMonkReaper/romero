@@ -1,5 +1,17 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T002 — 2026-11-13 — implementation checkpoint
+- status: implemented; verification pending
+- base: 026b599a1c871cd2ace666729296919c207ce1ad; branch: codex/t002-identity-security
+- red/green: compiling stubs failed behavioral assertions, then passed; topic partition had a separate red/green cycle. Evidence: [t002-tdd-evidence.md](t002-tdd-evidence.md).
+- controls: Docker golang:1.27: domain `go test -race -cover` PASS (identity 97.6%, security 100%); full `go test -race -coverprofile=/tmp/coverage.out ./...` PASS; `go vet ./...` PASS; static `CGO_ENABLED=0 go build` PASS; `go mod verify` PASS. Final domain race/vet/build rerun after review test additions PASS. govulncheck v1.9.0: no vulnerabilities found.
+- sqlc: FAIL, pre-existing missing queries directory assigned to T004; no persistence queries belong to T002. No placeholders added to bypass the gate.
+- review: computed tier 2/auth, round 1: 1 reported -> 1 unique -> 1 confirmed tests-as-evidence finding. Independent mutant removing IsAdmin survived original tests; new nonadmin user/orchestrator cases kill it. L1 fixed. Round 2 three lenses PASS on test-only delta. Reports under ../reviews/t002-*.md.
+- skill_resolution: used implement/go/testing-go/review/verify/security-audit; developer agent unavailable due unsupported account model; worker fallback used with same contracts.
+- compact_rules: strict assertion red before green; domain only; computed risk; three independent review lenses; no missing control called passed.
+- traceability: AC-01 scope authorization; AC-02 task requirement and topic partitions; AC-04 principal epistemic authority; AC-09 sanitizer/post-clean hash/XML envelope. Database audit/HTTP mappings remain downstream tasks.
+- remaining: linter result pending; sqlc pre-existing gate gap and human tier-2 approval must be explicit before merge. Issue stays open until delivery integrated.
+- control correction: golangci-lint v2.15.0 executed, FAIL: pre-existing unchecked fmt.Fprintln in cmd/romero/main.go:15; T002 test QF1001 fixed by equivalent De Morgan expression. Global verification remains FAIL due inherited CLI lint and missing T004 queries. No claim of merge readiness.
 ## T001 — validación real complementaria — 2026-11-13
 - status: pending-controls (no reimplementación de T001)
 - issue: https://github.com/CodeMonkReaper/romero/issues/1
@@ -27,6 +39,12 @@
 - decision: logged in `02-DOCS/wiki/sdd/decisions.md` (`T001`: parenthesized `CASE` in `idx_memories_active_topic_key` and nullable `audit_events.tenant_id`); Tier 2 checkpoint presented to user
 
 ## Decision queue
+
+- **DQ-02 (`blocking`, task: `T002`, tier: `2`):**
+  - **Question:** Aprobar el cambio de autorización tras revisar evidencia y aceptar que `sqlc generate` no puede completarse hasta T004 (directorio de consultas ausente en la base).
+  - **Options:** Aceptar la brecha de generación SQL no relacionada con dominio; o esperar T004 antes de cerrar la verificación global.
+  - **Recommendation:** Revisar T002 con sus pruebas de dominio y mantener el control global SQL pendiente hasta T004; no ampliar T002 con consultas ficticias.
+  - **Evidence:** `t002-tdd-evidence.md`, `../reviews/t002-correctness.md`, `../reviews/t002-security.md`, `../reviews/t002-tests.md`; Docker `sqlc v1.31.1 generate` -> missing `internal/infrastructure/persistence/queries`.
 
 - **DQ-01 (`review-after`, task: `T001`, tier: `2`):**
   - **Question:** Ejecutar la validación en vivo del contenedor `romero-postgres` (`docker compose up -d romero-postgres`) cuando el servicio `Docker Desktop Service` (`com.docker.service`) esté iniciado en el host Windows.
@@ -71,3 +89,14 @@
 - review: tier 2; panel de tres lentes sobre todo el diff contra main, ronda 1; 0 reportados → 0 únicos → 0 por verificar, verdict pass. Límites de reproducción independiente documentados.
 - evidence: verifications/phase-01-foundation-T001-main-2026-11-13.md y reviews/phase-01-foundation-T001-main.md.
 - next: confirmar merge/cierre de Issue #1; luego T002. Phase 01 sigue en ejecución, T002–T010 pendientes.
+
+## T002 — integración de main y controles — 2026-11-13
+- source: integración de origin/main 969d33a en 43f66e9; conflicto del ledger resuelto conservando los registros de ambas ramas.
+- controls: Docker golang:1.27: `go test -race -cover ./internal/domain/identity/... ./internal/domain/security/...` PASS (97.6% y 100%); `go test -race -coverprofile=/tmp/coverage.out ./...` PASS; `go vet ./...`, `CGO_ENABLED=0 go build`, `go mod verify` PASS. golangci-lint v2.15.0 PASS (0 issues).
+- sqlc: v1.31.1 FAIL por ausencia de `internal/infrastructure/persistence/queries`; el registro de T001 indica que el usuario difirió este control a T004. No se declara PASS ni se cierra automáticamente DQ-02.
+- next: revisión humana tier 2 de T002 y decisión sobre DQ-02 antes de entrega. El issue permanece abierto.
+
+## T002 — aprobación humana de DQ-02 — 2026-11-13
+- El usuario aprobó los cambios de autorización de T002 y que `sqlc generate` quede pendiente hasta T004, tras conocer el fallo y las alternativas.
+- DQ-02: resuelta por el usuario. `sqlc` permanece pendiente, no aprobado; debe ejecutarse y pasar en T004.
+- La aprobación no afirma que T002 ya esté integrada ni cierra el issue; la entrega y los controles que correspondan siguen pendientes.

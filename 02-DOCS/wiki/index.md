@@ -32,6 +32,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Documento | Ruta |
 | :--- | :--- |
 | Spec — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/specs/phase-01-foundation.md` |
+| Enmienda — autorización explícita por tarea | [Contrato](sdd/specs/phase-01-task-authorization-draft.md) · [plan](sdd/plans/phase-01-task-authorization-draft.md) |
 
 ## Planes Técnicos (`sdd/plans/`)
 
@@ -44,6 +45,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Documento | Ruta |
 | :--- | :--- |
 | Analysis — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/analysis/phase-01-foundation.md` |
+| Analysis — autorización por tarea y solicitudes opacas | [Informe 2026-11-14](sdd/analysis/phase-01-task-authorization-2026-11-14.md) |
 
 ## Progreso de Implementación (`sdd/progress/`)
 
