@@ -76,6 +76,8 @@ func (a AuthContext) valid() bool {
 func (a AuthContext) projectAllowed(projectID *uuid.UUID) bool {
 	return projectID != nil && *projectID != uuid.Nil && slices.Contains(a.AllowedProjects, *projectID)
 }
+// CanWriteScope checks writes that do not require a task assignment.
+// For task_shared, use AuthorizeTaskMemory with the current permission store.
 func (a AuthContext) CanWriteScope(projectID *uuid.UUID, scope ScopeType, taskID string) error {
 	if !a.valid() || !slices.Contains(a.AllowedScopes, scope) {
 		return ErrForbidden
@@ -92,6 +94,7 @@ func (a AuthContext) CanWriteScope(projectID *uuid.UUID, scope ScopeType, taskID
 		if strings.TrimSpace(taskID) == "" {
 			return ErrMissingTaskID
 		}
+		return ErrForbidden
 	case ScopeProjectShared:
 		if !a.projectAllowed(projectID) {
 			return ErrForbidden
@@ -106,15 +109,15 @@ func (a AuthContext) CanWriteScope(projectID *uuid.UUID, scope ScopeType, taskID
 	}
 	return nil
 }
-func (a AuthContext) CanReadMemory(m MemoryScopeTarget, callerTaskID string) bool {
+// CanReadMemory checks visibility without a task permission store.
+// For task_shared, use AuthorizeTaskMemory. A task selector cannot grant access.
+func (a AuthContext) CanReadMemory(m MemoryScopeTarget, _ string) bool {
 	if !a.valid() || m.TenantID != a.TenantID || !slices.Contains(a.AllowedScopes, m.ScopeType) {
 		return false
 	}
 	switch m.ScopeType {
 	case ScopeAgentPrivate:
 		return a.projectAllowed(m.ProjectID) && a.AgentID != nil && *a.AgentID != uuid.Nil && m.OwnerAgentID != nil && *a.AgentID == *m.OwnerAgentID
-	case ScopeTaskShared:
-		return a.projectAllowed(m.ProjectID) && strings.TrimSpace(m.TaskID) != "" && m.TaskID == callerTaskID
 	case ScopeProjectShared:
 		return a.projectAllowed(m.ProjectID)
 	case ScopeOrgShared, ScopeGlobalPublic:

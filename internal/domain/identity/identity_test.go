@@ -31,11 +31,13 @@ func TestScopeMatrix(t *testing.T) {
 		t.Run(string(scope), func(t *testing.T) {
 			a := identity.AuthContext{TenantID: tenant, PrincipalID: principal, PrincipalType: identity.PrincipalUser, AgentID: &agent, AllowedProjects: []uuid.UUID{project}, AllowedScopes: []identity.ScopeType{scope}, IsAdmin: true}
 			m := identity.MemoryScopeTarget{TenantID: tenant, ProjectID: &project, ScopeType: scope, OwnerAgentID: &agent, TaskID: "task"}
-			if err := a.CanWriteScope(&project, scope, "task"); err != nil {
+			// This legacy entry point has no assignment store.
+			task := scope == identity.ScopeTaskShared
+			if err := a.CanWriteScope(&project, scope, "task"); (task && !errors.Is(err, identity.ErrForbidden)) || (!task && err != nil) {
 				t.Fatal(err)
 			}
-			if !a.CanReadMemory(m, "task") {
-				t.Fatal("authorized read denied")
+			if got := a.CanReadMemory(m, "task"); got == task {
+				t.Fatalf("read with no assignment store: got %t for %s", got, scope)
 			}
 			m.TenantID = uuid.New()
 			if a.CanReadMemory(m, "task") {
