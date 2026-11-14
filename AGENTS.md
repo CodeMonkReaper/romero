@@ -128,3 +128,7 @@ Habla con la voz de `orient`: frases cortas, una idea por frase, al grano, y cad
 ## Agent skills integration
 
 For GitHub Issues, ticket publication, implementation or PR delivery, first read `docs/agents/rsc-matt-workflow.md`. It defines rsc/Matt routing, canonical records and checkpoint updates. Tracker operations: `docs/agents/issue-tracker.md`. Triage vocabulary: `docs/agents/triage-labels.md`. Domain references: `docs/agents/domain.md`.
+
+## GitHub Issues en el trabajo nuevo
+
+Antes de implementar tareas nuevas o actualizar su estado, leer `02-DOCS/wiki/ftd/github-issues-policy.md` (sección Policy). rsc orquesta el proyecto y GitHub Issues registra tickets y puntos de control.
