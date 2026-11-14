@@ -1,5 +1,13 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-13 — Representaciones de dominio T002
+
+Contexto — El plan fija las operaciones públicas, pero deja abiertas representaciones auxiliares.
+Opciones — Grants como slices o mapas; identidad de agente opcional o UUID cero; estimación de tokens local o dependencia de tokenizer.
+Decisión — Grants como slices, AgentID opcional mediante puntero, estimación de tokens como techo de caracteres Unicode sanitizados dividido por cuatro. MemoryScopeTarget.SameTopicPartition expresa la frontera de unicidad de §0 sin acceso a persistencia.
+Motivo — Mantiene dominio Go puro y contratos explícitos. TokenCount es una estimación, no una tokenización de modelo. La dependencia google/uuid v1.6.0 prevista por T002 se incorpora aquí porque T001 no la declaró.
+
+
 Registro append-only de las decisiones arquitectónicas y de especificación tomadas en **ROMERO**.
 
 ---
