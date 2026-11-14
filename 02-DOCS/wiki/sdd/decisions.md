@@ -1,5 +1,11 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-14 — Correcciones verificadas de T001/T002
+
+El usuario autorizó corregir directamente en main el desbordamiento tras sanitizar, la representación persistida de permisos y el cierre de trazabilidad. Seguimiento: Issue #16. El límite se comprueba antes y después de clean; se rechaza el exceso, sin truncar. La migración nueva `00002_principal_authorization.sql` añade `is_admin=false`, ámbitos vacíos por defecto y una restricción de nombres de ámbito válidos sin elementos NULL. No se modifica la migración T001 entregada ni se transforma read/write en permisos distintos. Datos previos incompatibles abortan la migración transaccional para revisión del operador. T004 usará el siguiente número libre para task_permissions; T005 deberá mapear is_admin desde persistencia.
+
+Reversión: Down de 00002 elimina is_admin y su información; restaura el default histórico read/write y retira la restricción, sin reescribir los scopes explícitos existentes. No ejecutar esa reversión sobre una base con uso real sin conservar antes las concesiones administrativas. Ninguna migración se aplicó a una base del usuario durante esta corrección; las comprobaciones usan contenedores desechables.
+
 ## 2026-11-14 — Aprobación de contratos técnicos de tarea
 
 El usuario aprobó el puerto de permisos, la cola durable, el uso de reservas con token, la transacción de mutación y resultado, la ruta de consulta propuesta y la regla de que solicitudes opacas sin clave de idempotencia son independientes. Fuente: [plan de autorización](plans/phase-01-task-authorization-draft.md). La aprobación no reemplaza la puerta de análisis ni la revisión de implementación.

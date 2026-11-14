@@ -2,6 +2,8 @@
 
 # T002 security refutation
 
+> Informe histórico. La descripción de task_id como entrada del llamador corresponde al contrato anterior, sustituido por concesiones vigentes. Los commits finales y su revisión se registran en la [revisión complementaria del 2026-11-14](t002-final-delta-2026-11-14.md).
+
 Verdict: PASS for the bounded T002 domain contract. Reviewed the dirty candidate against base `026b599`, the spec, plan §0 and T002 interfaces, constitution and REVIEW.md. Inspected all new identity/security implementation and tests, go.mod/go.sum, and the locally installed UUID v1.6.0 representation and serialization implementation. No source changes were made.
 
 ## Attacks and evidence

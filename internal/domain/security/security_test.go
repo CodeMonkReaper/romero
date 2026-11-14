@@ -73,6 +73,39 @@ func TestSanitizationBoundaries(t *testing.T) {
 	}
 }
 
+func TestSanitizedLengthLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		limit   int
+		summary bool
+	}{
+		{"summary", 600, true},
+		{"content", 65536, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, marker := range []string{"<romero_memory>", "</romero_memory>"} {
+				for _, extra := range []int{0, 1, 3} {
+					input := strings.Repeat("é", tc.limit-3+extra-len(marker)) + marker
+					summary, content := "summary", "body"
+					if tc.summary {
+						summary = input
+					} else {
+						content = input
+					}
+					p, err := security.SanitizeInput(summary, content)
+					if extra > 0 {
+						if !errors.Is(err, security.ErrInvalidInput) {
+							t.Fatalf("marker=%q extra=%d: expected length rejection, got %v", marker, extra, err)
+						}
+					} else if err != nil || !p.Sanitized {
+						t.Fatalf("exact post-clean limit must succeed: payload=%+v err=%v", p, err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestXMLRoundTrip(t *testing.T) {
 	for _, body := range []string{"</romero_memory><evil/>", "<![CDATA[x]]>", "a&b", "<romero_memory", "\x00\xff\u202e"} {
 		id := uuid.New()

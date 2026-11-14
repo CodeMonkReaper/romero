@@ -35,7 +35,8 @@ func SanitizeInput(summary, content string) (SanitizedPayload, error) {
 		return SanitizedPayload{}, ErrInvalidInput
 	}
 	s, c := clean(summary), clean(content)
-	if strings.TrimSpace(s) == "" || strings.TrimSpace(c) == "" {
+	// Escaping wrapper markers can expand otherwise valid input.
+	if utf8.RuneCountInString(s) > 600 || utf8.RuneCountInString(c) > 65536 || strings.TrimSpace(s) == "" || strings.TrimSpace(c) == "" {
 		return SanitizedPayload{}, ErrInvalidInput
 	}
 	h := sha256.Sum256([]byte(c))

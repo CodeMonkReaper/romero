@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## Estado reconciliado — 2026-11-14
+
+- **Entrega histórica T002:** PR [#15](https://github.com/CodeMonkReaper/romero/pull/15) fusionado en `main`, merge `fed8746269c3d7540d305e17e2bdbe21fbd46ff4`. Issue [#2](https://github.com/CodeMonkReaper/romero/issues/2) cerrado como completed. Ambos estados comprobados en GitHub el 2026-11-14.
+- **Delta final:** `5951e42` exige concesiones vigentes para tarea; `509b926` separa fallos del almacén de denegaciones; `fb5e89c` aplica formato a comentarios. Extremo entregado: `fb5e89cff04889a93b3b6da259669c7fa910a575`.
+- **Revisión complementaria:** tres revisores independientes examinaron esos commits contra la enmienda aprobada; 0 hallazgos. Tres mutantes independientes fueron detectados por las pruebas. Informe: [t002-final-delta-2026-11-14.md](../reviews/t002-final-delta-2026-11-14.md). Los informes originales no acreditaban ese delta.
+- **Corrección posterior:** el doble chequeo detectó expansión sobre el límite al sanitizar. Seguimiento [#16](https://github.com/CodeMonkReaper/romero/issues/16), autorizado directamente sobre `main`; incluye límites finales y migración nueva de permisos. Evidencia: [t001-t002-corrections-2026-11-14.md](../verifications/t001-t002-corrections-2026-11-14.md).
+- **Límites:** T002 entrega dominio y puerto; no acredita asignaciones PostgreSQL, Authenticator ni integración de servicios/HTTP. `sqlc` sigue pendiente de T004. Phase 01 no está completa. Las anotaciones siguientes preservan la secuencia histórica y sus pendientes originales.
+
 ## T002 — 2026-11-13 — implementation checkpoint
 - status: implemented; verification pending
 - base: 026b599a1c871cd2ace666729296919c207ce1ad; branch: codex/t002-identity-security

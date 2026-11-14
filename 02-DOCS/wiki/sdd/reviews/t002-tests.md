@@ -2,6 +2,8 @@
 
 # T002 tests-as-evidence review
 
+> Informe histórico: el HOLD inicial fue corregido y se conserva su secuencia de rondas. No acredita los commits finales de task_permission. La [revisión complementaria del 2026-11-14](t002-final-delta-2026-11-14.md) registra la nueva revisión y tres mutantes independientes.
+
 Verdict: HOLD for the missing administrative-authority negative test. The implementation currently checks the flag correctly; the finding concerns proof of the security contract.
 
 Read: approved foundation spec, plan section 0 and T002 interfaces, constitution, REVIEW.md, both new domain packages and their tests, and TDD evidence.

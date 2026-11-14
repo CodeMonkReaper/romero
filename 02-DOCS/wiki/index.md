@@ -55,6 +55,10 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 
 ## Verificación de T001
 
+- [Correcciones T001/T002 y seguimiento #16](ftd/t001-t002-corrections.md)
+- [Revisión del delta final T002, tres lentes](sdd/reviews/t002-final-delta-2026-11-14.md)
+- [Verificación de correcciones T001/T002](sdd/verifications/t001-t002-corrections-2026-11-14.md)
+
 - [PostgreSQL real y controles de T001](sdd/verifications/phase-01-foundation-T001-2026-11-13.md)
 - [Verificación T001 con sqlc diferido por aprobación humana](sdd/verifications/phase-01-foundation-T001-2026-11-13-r2.md)
 - [Revisión complementaria de T001](sdd/reviews/phase-01-foundation-T001-validation.md)

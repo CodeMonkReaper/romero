@@ -2,6 +2,8 @@
 
 # T002 correctness review
 
+> Informe histórico del candidato inicial y su delta de pruebas. No cubre los commits finales de task_permission. Véase la [revisión complementaria del 2026-11-14](t002-final-delta-2026-11-14.md) para ese delta y las correcciones posteriores.
+
 Verdict: PASS for the scoped T002 domain identity/security candidate against base `026b599`.
 
 Read `REVIEW.md`, constitution, phase-01 spec and plan, including §0 and exact T002 Interfaces Produces. Inspected both new domain implementations and their tests, plus the `go.mod` dependency addition. No source edits made.

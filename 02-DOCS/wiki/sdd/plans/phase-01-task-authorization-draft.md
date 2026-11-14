@@ -9,7 +9,9 @@ slug: phase-01-task-authorization
 
 # Borrador de plan — autorización por tarea
 
-Fuente: [enmienda de especificación](../specs/phase-01-task-authorization-draft.md). El usuario aprobó el diseño y su integración el 2026-11-13. La implementación T002 actual no satisface todavía este contrato. Las tareas siguientes definen las interfaces y las pruebas requeridas.
+Fuente: [enmienda de especificación](../specs/phase-01-task-authorization-draft.md). El usuario aprobó el diseño y su integración el 2026-11-13. El contrato de dominio T002 se integró mediante PR #15, merge `fed8746`; su delta final tiene [revisión complementaria](../reviews/t002-final-delta-2026-11-14.md). Persistencia, servicios y HTTP siguen pendientes en las tareas siguientes.
+
+Reserva de numeración, 2026-11-14: `00002_principal_authorization.sql` corresponde a la corrección de permisos de principals. La migración task_permissions de T004 usará el siguiente número libre; la ruta `00002_task_authorization.sql` citada en la previsión original era una propuesta, no un archivo implementado.
 
 ## Diseño y secuencia propuesta
 
