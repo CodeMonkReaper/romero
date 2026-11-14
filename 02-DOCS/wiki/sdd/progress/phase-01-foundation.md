@@ -1,5 +1,16 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T003 — 2026-11-14 — verified-awaiting-merge
+- issue: https://github.com/CodeMonkReaper/romero/issues/3
+- branch: `feat/t003-memory-provenance` (worktree `.worktrees/t003-memory-provenance`, base `b896d2a`)
+- commits: `de00365` (TDD RED→GREEN→triangulation for `internal/domain/provenance` + `internal/domain/memory`), `00f08b2` (`L1` nit fix `ErrMissingID` in `MemorySource.Validate()`)
+- red/green: stub compilation failed assertions across `TestSourceTypeValid`, `TestMemorySourceValidate`, `TestMemorySourceRef`, `TestEpistemicRankAndPriors`, `TestApplyFeedbackSignalsAndQuarantine`, `TestDecideTopicSupersession`, `TestSelectVersionPointInTime`, and `TestMemoryAndRelationValidate`, then passed with boundary triangulation (`0.30` confidence boundary, utility clamping, `NaN`/`Inf`, bitemporal tie-breaking, self-loop relation, scope ownership, and `ErrMissingID` RED→GREEN).
+- controls (`golang:1.27` on `00f08b2`): `gofmt -s -l`, `CGO_ENABLED=0 go build ./cmd/romero`, `go vet ./...`, `go mod verify` PASS; `go test -race -cover ./internal/domain/provenance/... ./internal/domain/memory/...` PASS (`provenance` `100.0%`, `memory` `86.5%`); full `go test -race ./...` PASS (`cmd/romero` `83.3%`, `identity` `98.2%`, `security` `100.0%`); `govulncheck v1.9.0` (`No vulnerabilities found.`); `golangci-lint v2.15.0` (`0 issues.`). `sqlc generate` remains explicitly deferred to `T004` (`decisions.md`, DQ-02).
+- risk & review: `rsc risk` computed **Tier 1** (`reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Round 1 (`1 nit` `L1`) → fixed in `00f08b2` (`L1: fixed` in `rsc review ledger`) → Round 2 (`0 findings: 0 blockers, 0 nits`, `VERDICT: pass`). Reports: [phase-01-foundation-T003.md](../reviews/phase-01-foundation-T003.md) and [phase-01-foundation-T003-2026-11-14.md](../verifications/phase-01-foundation-T003-2026-11-14.md).
+- traceability: `AC-04` (priors `5..1` + agent `verified`/`confirmed_verified` guard), `AC-05` (`conflicted` + `contradicts` on lower rank), `AC-06` (supersession + `verified->observed` override + closed-state immutability), `AC-07` (tri-temporal `[valid_from, valid_until)` + Point-in-Time snapshot selection), `AC-08` (exact Bayesian feedback formulas + synchronous `< 0.30` quarantine), provenance invariants, and domain repository ports.
+- skill_resolution: `used: [implement, worktrees, go, testing-go, review, verify]`, `missing: []`, `fallback: [research subagent for Tier 1 fresh-context review]`.
+- next: push `feat/t003-memory-provenance`, open PR to `main` (`Closes #3`), and wait for merge approval to close Issue `#3` and unblock `T004` on the `T003` dependency edge.
+
 ## Estado reconciliado — 2026-11-14
 
 - **Entrega histórica T002:** PR [#15](https://github.com/CodeMonkReaper/romero/pull/15) fusionado en `main`, merge `fed8746269c3d7540d305e17e2bdbe21fbd46ff4`. Issue [#2](https://github.com/CodeMonkReaper/romero/issues/2) cerrado como completed. Ambos estados comprobados en GitHub el 2026-11-14.
