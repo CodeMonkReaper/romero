@@ -5,6 +5,20 @@ Claude Code reads this file. Every other assistant wired in this project reads `
 
 Project instructions for Claude Code go below.
 
+## Agent skills
+
+### Issue tracker
+
+Use GitHub Issues for CodeMonkReaper/romero. Read `docs/agents/issue-tracker.md` for operations and `docs/agents/rsc-matt-workflow.md` before planning, publishing tickets, implementing or shipping.
+
+### Triage labels
+
+Use the five canonical roles mapped in `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context documentation follows `docs/agents/domain.md`; preserve existing rsc decisions and evidence.
+
 <!--
   Why rsc created this file
   =========================

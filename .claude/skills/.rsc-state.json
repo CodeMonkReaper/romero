@@ -256,7 +256,13 @@
   ],
   "agentCollisions": [],
   "agentsKept": [],
-  "explicitAgents": [],
+  "explicitAgents": [
+    "developer",
+    "finding-verifier",
+    "refuter-correctness",
+    "refuter-security",
+    "refuter-tests"
+  ],
   "memory": {
     "mode": "full",
     "reason": "wired",
@@ -300,7 +306,7 @@
     "save-session"
   ],
   "commandCollisions": [],
-  "version": "4.1.2",
+  "version": "4.1.6",
   "ignoreEntriesAdded": [
     ".claude/agents/developer.md",
     ".claude/agents/finding-verifier.md",
