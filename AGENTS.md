@@ -124,3 +124,7 @@ Habla con la voz de `orient`: frases cortas, una idea por frase, al grano, y cad
 **rsc updates.** Claude Code, Codex, Gemini CLI, Cursor and OpenCode check for a new rsc on their own. In any other assistant, run `node .rsc/auto-update.mjs` once on the first turn of a session and relay any notice it prints in one line; "up to date" needs no mention.
 
 <!-- rsc-suggest:end -->
+
+## GitHub Issues en el trabajo nuevo
+
+Antes de implementar tareas nuevas o actualizar su estado, leer `02-DOCS/wiki/ftd/github-issues-policy.md` (sección Policy). rsc orquesta el proyecto y GitHub Issues registra tickets y puntos de control.
