@@ -32,6 +32,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Documento | Ruta |
 | :--- | :--- |
 | Spec — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/specs/phase-01-foundation.md` |
+| Enmienda — autorización explícita por tarea | [Contrato](sdd/specs/phase-01-task-authorization-draft.md) · [plan](sdd/plans/phase-01-task-authorization-draft.md) |
 
 ## Planes Técnicos (`sdd/plans/`)
 
@@ -44,12 +45,25 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Documento | Ruta |
 | :--- | :--- |
 | Analysis — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/analysis/phase-01-foundation.md` |
+| Analysis — autorización por tarea y solicitudes opacas | [Informe 2026-11-14](sdd/analysis/phase-01-task-authorization-2026-11-14.md) |
 
 ## Progreso de Implementación (`sdd/progress/`)
 
 | Documento | Ruta |
 | :--- | :--- |
 | Progress Ledger — Phase 01 Foundation | `02-DOCS/wiki/sdd/progress/phase-01-foundation.md` |
+
+## Verificación de T001
+
+- [Correcciones T001/T002 y seguimiento #16](ftd/t001-t002-corrections.md)
+- [Revisión del delta final T002, tres lentes](sdd/reviews/t002-final-delta-2026-11-14.md)
+- [Verificación de correcciones T001/T002](sdd/verifications/t001-t002-corrections-2026-11-14.md)
+
+- [PostgreSQL real y controles de T001](sdd/verifications/phase-01-foundation-T001-2026-11-13.md)
+- [Verificación T001 con sqlc diferido por aprobación humana](sdd/verifications/phase-01-foundation-T001-2026-11-13-r2.md)
+- [Revisión complementaria de T001](sdd/reviews/phase-01-foundation-T001-validation.md)
+- [Verificación de entrega T001 a main](sdd/verifications/phase-01-foundation-T001-main-2026-11-13.md)
+- [Revisión completa T001 contra main](sdd/reviews/phase-01-foundation-T001-main.md)
 
 
 

@@ -1,5 +1,31 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-14 — Correcciones verificadas de T001/T002
+
+El usuario autorizó corregir directamente en main el desbordamiento tras sanitizar, la representación persistida de permisos y el cierre de trazabilidad. Seguimiento: Issue #16. El límite se comprueba antes y después de clean; se rechaza el exceso, sin truncar. La migración nueva `00002_principal_authorization.sql` añade `is_admin=false`, ámbitos vacíos por defecto y una restricción de nombres de ámbito válidos sin elementos NULL. No se modifica la migración T001 entregada ni se transforma read/write en permisos distintos. Datos previos incompatibles abortan la migración transaccional para revisión del operador. T004 usará el siguiente número libre para task_permissions; T005 deberá mapear is_admin desde persistencia.
+
+Reversión: Down de 00002 elimina is_admin y su información; restaura el default histórico read/write y retira la restricción, sin reescribir los scopes explícitos existentes. No ejecutar esa reversión sobre una base con uso real sin conservar antes las concesiones administrativas. Ninguna migración se aplicó a una base del usuario durante esta corrección; las comprobaciones usan contenedores desechables.
+
+## 2026-11-14 — Aprobación de contratos técnicos de tarea
+
+El usuario aprobó el puerto de permisos, la cola durable, el uso de reservas con token, la transacción de mutación y resultado, la ruta de consulta propuesta y la regla de que solicitudes opacas sin clave de idempotencia son independientes. Fuente: [plan de autorización](plans/phase-01-task-authorization-draft.md). La aprobación no reemplaza la puerta de análisis ni la revisión de implementación.
+
+## 2026-11-14 — Escrituras opacas asíncronas (Phase 01)
+
+Contexto — Una escritura sin lectura no debe revelar si un ID o conflicto existe ni afirmar falsamente que se aplicó. Decisión humana: aceptación durable `202` con identificador opaco para toda escritura autorizada sin lectura; reautorización en el trabajador, estado legible solo con permiso vigente, tres reintentos y retención configurable. El usuario aprobó incorporar esta ampliación y la ruta REST de estado. La idempotencia opaca se separa de la captura normal y se limita a tenant y principal. La [enmienda de especificación](specs/phase-01-task-authorization-draft.md) y su [plan](plans/phase-01-task-authorization-draft.md) recogen los límites; firmas y análisis quedan pendientes.
+
+## 2026-11-13 — Autorización explícita para task_shared (Phase 01)
+
+Contexto — La revisión de T002 detectó que conocer un task_id no prueba autorización. Opciones consideradas: acceso por proyecto, credencial por tarea o asignaciones del servidor. Decisión humana: asignaciones verificadas en PostgreSQL, lectura y escritura independientes, comprobadas por el servicio usando la identidad autenticada y el recurso; administración mediante bootstrap/CLI con auditoría transaccional. Enmiendas: [spec](specs/phase-01-task-authorization-draft.md) y [plan](plans/phase-01-task-authorization-draft.md). El usuario aprobó las reglas y el diseño para integrarlos. La implementación y el análisis siguen pendientes.
+
+## 2026-11-13 — Representaciones de dominio T002
+
+Contexto — El plan fija las operaciones públicas, pero deja abiertas representaciones auxiliares.
+Opciones — Grants como slices o mapas; identidad de agente opcional o UUID cero; estimación de tokens local o dependencia de tokenizer.
+Decisión — Grants como slices, AgentID opcional mediante puntero, estimación de tokens como techo de caracteres Unicode sanitizados dividido por cuatro. MemoryScopeTarget.SameTopicPartition expresa la frontera de unicidad de §0 sin acceso a persistencia.
+Motivo — Mantiene dominio Go puro y contratos explícitos. TokenCount es una estimación, no una tokenización de modelo. La dependencia google/uuid v1.6.0 prevista por T002 se incorpora aquí porque T001 no la declaró.
+
+
 Registro append-only de las decisiones arquitectónicas y de especificación tomadas en **ROMERO**.
 
 ---
@@ -105,3 +131,17 @@ Registro append-only de las decisiones arquitectónicas y de especificación tom
   2. Permitir `tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE` (anulable, igual que `principal_id` y `agent_id`) en `audit_events` y envolver cada expresión `CASE WHEN ... END` entre paréntesis `(CASE WHEN ... END)` en `idx_memories_active_topic_key`.
 - **Decisión:** Opción 2 (aplicada en commit `078645f`, verificada en Ronda 2 con 0 hallazgos).
 - **Por qué:** Satisface la gramática nativa de PostgreSQL 17 y `sqlc` sin funciones auxiliares y permite auditar cualquier intento de intrusión `401` sin contaminar la tabla `tenants` con registros centinela.
+
+## 2026-11-13 — Diferir generación sqlc hasta T004 (feature: phase-01-foundation, tasks: T001/T004)
+
+- Contexto: sqlc v1.31.1 ejecutado realmente falla porque el directorio de consultas aún no existe. El plan asigna las consultas y su generación a T004; T001 crea la configuración base.
+- Opciones: mantener T001 pendiente hasta T004; o aceptar explícitamente el control diferido a T004 sin modificar la configuración ni crear consultas ficticias.
+- Decisión humana: el usuario respondió «Sí, diferir sqlc a T004» a la solicitud de autorización de este control para cerrar T001 cuando terminen revisión y entrega.
+- Por qué: respeta el alcance del plan y mantiene la generación SQL como condición de cierre obligatoria de T004. El comando fallido sigue registrado, no se informa como aprobado.
+- Entorno: se usa PostgreSQL desechable separado del servicio Compose para validar la misma migración sin afectar la sesión concurrente. Las pruebas race usan GCC en contenedor; el binario de producto sigue compilándose con CGO_ENABLED=0.
+
+## 2026-11-14 — Reconciliación del contrato de T002 con T004 y T011
+
+- T004 corrige la frontera de unicidad por inquilino en una migración posterior. Ante duplicados históricos, la migración revierte y conserva los registros para que el operador los resuelva.
+- La consulta vigente de permisos define el momento de autorización. El trabajador vuelve a comprobar antes de mutar y confirma los efectos solo si conserva una reserva válida.
+- AC-T7 a AC-T12 reúnen las decisiones aprobadas sobre aceptación, claves, ejecución, estado y retención. T002 entrega política y puerto de dominio. El adaptador PostgreSQL, HTTP y el trabajador tienen tareas y pruebas propias. [Plan de la enmienda](plans/phase-01-task-authorization-draft.md).
