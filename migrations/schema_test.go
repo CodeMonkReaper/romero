@@ -248,6 +248,64 @@ func TestBaseScaffoldingFilesExist(t *testing.T) {
 	}
 }
 
+func TestTaskAuthorizationAndOpaqueRequestsMigrationContract(t *testing.T) {
+	data, err := fs.ReadFile(migrations.FS, "00003_task_authorization_and_opaque_requests.sql")
+	if err != nil {
+		t.Fatalf("expected embedded 00003_task_authorization_and_opaque_requests.sql, got error: %v", err)
+	}
+	sqlText := string(data)
+
+	parts := strings.Split(sqlText, "-- +goose Down")
+	if len(parts) != 2 {
+		t.Fatalf("expected exactly one '-- +goose Down' section in 00003, got %d parts", len(parts))
+	}
+	upSQL, downSQL := parts[0], parts[1]
+
+	requiredUpFragments := []string{
+		"-- +goose Up",
+		"LOCK TABLE memories IN SHARE ROW EXCLUSIVE MODE;",
+		"uq_projects_tenant_id",
+		"uq_principals_tenant_id",
+		"CREATE TABLE task_permissions (",
+		"FOREIGN KEY (tenant_id, project_id) REFERENCES projects(tenant_id, id) ON DELETE CASCADE",
+		"FOREIGN KEY (tenant_id, principal_id) REFERENCES principals(tenant_id, id) ON DELETE CASCADE",
+		"CONSTRAINT uq_task_permissions_tuple UNIQUE (tenant_id, project_id, task_id, principal_id)",
+		"CREATE TABLE opaque_memory_requests (",
+		"idx_opaque_requests_idempotency",
+		"ON opaque_memory_requests(tenant_id, principal_id, idempotency_key)",
+		"WHERE idempotency_key IS NOT NULL",
+		"idx_memories_active_topic_key",
+		"scope_type IN ('org_shared', 'global_public')",
+	}
+	for _, frag := range requiredUpFragments {
+		if !strings.Contains(upSQL, frag) {
+			t.Errorf("00003 up migration missing required fragment %q", frag)
+		}
+	}
+
+	requiredDownOrder := []string{
+		"LOCK TABLE memories IN SHARE ROW EXCLUSIVE MODE;",
+		"DROP INDEX IF EXISTS idx_memories_active_topic_key;",
+		"CREATE UNIQUE INDEX idx_memories_active_topic_key",
+		"DROP TABLE IF EXISTS opaque_memory_requests;",
+		"DROP TABLE IF EXISTS task_permissions;",
+		"ALTER TABLE principals DROP CONSTRAINT IF EXISTS uq_principals_tenant_id;",
+		"ALTER TABLE projects DROP CONSTRAINT IF EXISTS uq_projects_tenant_id;",
+	}
+	lastIdx := -1
+	for _, stmt := range requiredDownOrder {
+		idx := strings.Index(downSQL, stmt)
+		if idx == -1 {
+			t.Errorf("00003 down migration missing %q", stmt)
+			continue
+		}
+		if idx < lastIdx {
+			t.Errorf("00003 down migration statement %q is out of reverse order", stmt)
+		}
+		lastIdx = idx
+	}
+}
+
 func extractBlock(t *testing.T, sqlText, startMarker, endMarker string) string {
 	t.Helper()
 	start := strings.Index(sqlText, startMarker)
