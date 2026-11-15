@@ -26,12 +26,23 @@ const defaultConfigPath = "configs/romero.toml"
 
 type tomlFileConfig struct {
 	Server struct {
-		Host     string `toml:"host"`
-		RESTPort int    `toml:"rest_port"`
+		Host       string `toml:"host"`
+		RESTPort   int    `toml:"rest_port"`
+		MCPSSEPort int    `toml:"mcp_sse_port"`
 	} `toml:"server"`
 	Database struct {
 		DSN string `toml:"dsn"`
 	} `toml:"database"`
+}
+
+// MCPServeOptions configures standalone `romero mcp` execution.
+type MCPServeOptions struct {
+	DSN        string
+	Transport  string
+	ListenAddr string
+	APIKey     string
+	Stdin      io.Reader
+	Stdout     io.Writer
 }
 
 // ProvisioningService defines the application operations used by CLI commands.
@@ -62,6 +73,8 @@ type Dependencies struct {
 	Migrator        Migrator
 	OpenProvisioner func(ctx context.Context, dsn string) (ProvisioningClient, func(), error)
 	Serve           func(ctx context.Context, dsn, listenAddr string) error
+	ServeWithMCP    func(ctx context.Context, dsn, restListenAddr, mcpListenAddr string) error
+	MCP             func(ctx context.Context, opts MCPServeOptions) error
 	Eval            func(ctx context.Context, datasetPath string, maxTokens, hops int) (*eval.Report, error)
 	Consolidate     func(ctx context.Context, dsn, rawAPIKey string, projectID *uuid.UUID, dryRun bool) (*consolidation.ConsolidateResult, error)
 }
@@ -103,10 +116,22 @@ func resolveAPIKey(flagKey string) string {
 }
 
 func resolveListenAddr(flagAddr, configPath string) string {
+	return resolveServerPortAddr(flagAddr, "ROMERO_LISTEN_ADDR", configPath, func(cfg tomlFileConfig) int {
+		return cfg.Server.RESTPort
+	}, 8420)
+}
+
+func resolveMCPListenAddr(flagAddr, configPath string) string {
+	return resolveServerPortAddr(flagAddr, "ROMERO_MCP_LISTEN_ADDR", configPath, func(cfg tomlFileConfig) int {
+		return cfg.Server.MCPSSEPort
+	}, 8421)
+}
+
+func resolveServerPortAddr(flagAddr, envKey, configPath string, selectPort func(tomlFileConfig) int, defaultPort int) string {
 	if v := strings.TrimSpace(flagAddr); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("ROMERO_LISTEN_ADDR")); v != "" {
+	if v := strings.TrimSpace(os.Getenv(envKey)); v != "" {
 		return v
 	}
 	path := strings.TrimSpace(configPath)
@@ -116,15 +141,15 @@ func resolveListenAddr(flagAddr, configPath string) string {
 	raw, err := os.ReadFile(path) // #nosec G304 -- path comes from explicit operator CLI --config flag
 	if err == nil {
 		var parsed tomlFileConfig
-		if toml.Unmarshal(raw, &parsed) == nil && parsed.Server.RESTPort > 0 {
+		if toml.Unmarshal(raw, &parsed) == nil && selectPort(parsed) > 0 {
 			host := strings.TrimSpace(parsed.Server.Host)
 			if host == "" {
 				host = "127.0.0.1"
 			}
-			return fmt.Sprintf("%s:%d", host, parsed.Server.RESTPort)
+			return fmt.Sprintf("%s:%d", host, selectPort(parsed))
 		}
 	}
-	return "127.0.0.1:8420"
+	return fmt.Sprintf("127.0.0.1:%d", defaultPort)
 }
 
 func writeJSON(w io.Writer, v any) error {
