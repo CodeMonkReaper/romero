@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T006 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/6
+- branch: `feat/t006-capture-service` (base `560e664`)
+- red/green: stub `CaptureService` failed all 6 behavioral tests (`not implemented`), then passed with triangulation (`85.3%` statement coverage in `internal/application/capture`).
+- controls (`golang:1.27` + `golangci-lint:latest` + ephemeral `pgvector/pgvector:pg17`): `gofmt -s -w ./internal/application/capture` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go vet ./...` PASS, `golangci-lint run ./internal/application/capture/...` (`0 issues.`), `CGO_ENABLED=1 go test -count=1 -race -cover ./internal/application/capture/...` (`85.3%` statements) PASS, full `CGO_ENABLED=1 go test -count=1 -race ./...` PASS (all packages including `postgres` against PG17).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `human approval: not required`). Fresh-context Tier 1 Round 1 (`3 blockers`, `3 nits` — `idx_memories_active_topic_key` order, `SupersedeMemory` destination scope check, `>= 85%` coverage) -> fixed -> Round 2 (`VERDICT: pass`, 0 blockers).
+- traceability: `AC-01`..`AC-06`, `AC-09`, `AC-T1`..`AC-T4`, `AC-T7`..`AC-T9`.
+
 ## T005 — 2026-11-14 — verified-awaiting-merge
 - issue: https://github.com/CodeMonkReaper/romero/issues/5
 - branch: `feat/t005-provisioning-cli` (worktree `.worktrees/t005-provisioning-cli`, base `56778e2`)
