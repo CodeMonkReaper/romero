@@ -87,6 +87,17 @@ func (g *CognitiveGraph) ApplyRelationsAdded(rels []memory.MemoryRelation) {
 	}
 }
 
+func (g *CognitiveGraph) ApplyRelationDeactivated(tenantID uuid.UUID, _ *uuid.UUID, relationID uuid.UUID) {
+	if tenantID == uuid.Nil || relationID == uuid.Nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if rel, ok := g.edges[relationID]; ok && rel.TenantID == tenantID {
+		delete(g.edges, relationID)
+	}
+}
+
 func (g *CognitiveGraph) ApplyEmbeddingUpsert(tenantID uuid.UUID, projectID *uuid.UUID, memoryID uuid.UUID, denseVec []float32) {
 	if memoryID == uuid.Nil || len(denseVec) == 0 {
 		return
