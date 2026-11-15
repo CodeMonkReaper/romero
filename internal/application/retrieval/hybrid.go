@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/romero-project/romero/internal/domain/governor"
 	"github.com/romero-project/romero/internal/domain/graph"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
@@ -493,6 +494,7 @@ func (s *Service) executeHybridSearch(
 			HasConflictAlert:      act.HasConflictAlert,
 		})
 	}
+	s.applyCrossEncoderRerank(ctx, q.Query, inputs)
 	ranked := memory.RankCandidates(inputs, now, q.IncludeSuperseded, q.IncludeConsolidated)
 
 	if auditOp != "" {
@@ -513,6 +515,41 @@ func (s *Service) executeHybridSearch(
 	}
 
 	return ranked, embeddings, degradedMode, nil
+}
+
+func (s *Service) applyCrossEncoderRerank(ctx context.Context, query string, inputs []memory.CandidateRankingInput) {
+	if s.reranker == nil || s.profile != governor.ProfileUltra || len(inputs) == 0 {
+		return
+	}
+	indices := make([]int, len(inputs))
+	for i := range inputs {
+		indices[i] = i
+	}
+	sort.Slice(indices, func(i, j int) bool {
+		return inputs[indices[i]].SemanticScore > inputs[indices[j]].SemanticScore
+	})
+	topN := len(indices)
+	if topN > 30 {
+		topN = 30
+	}
+	cands := make([]memory.RerankCandidate, topN)
+	for i := 0; i < topN; i++ {
+		m := inputs[indices[i]].Memory
+		cands[i] = memory.RerankCandidate{
+			MemoryID: m.ID,
+			Text:     strings.TrimSpace(m.Summary + "\n" + m.Content),
+		}
+	}
+	logits, err := s.reranker.Rerank(ctx, query, cands)
+	if err != nil {
+		return
+	}
+	for i := 0; i < topN; i++ {
+		idx := indices[i]
+		if z, ok := logits[inputs[idx].Memory.ID]; ok {
+			inputs[idx].SemanticScore = memory.FuseCrossEncoderScore(z, inputs[idx].SemanticScore, true)
+		}
+	}
 }
 
 func validateSearchQuery(q SearchQuery) error {
