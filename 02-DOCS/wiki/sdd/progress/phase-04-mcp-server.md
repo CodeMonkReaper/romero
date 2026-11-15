@@ -28,3 +28,13 @@ branch: feat/phase04-mcp-server
 ## Decision queue
 
 - *(empty)*
+
+## T001 — 2026-11-15
+- status: complete
+- issue: [#63](https://github.com/CodeMonkReaper/romero/issues/63) (implementado y verificado en rama `feat/phase04-mcp-server`; pendiente de cierre tras merge a `main`)
+- red: `TestGetMemory_FiltersInvisibleRelations_CurrentAndPointInTime` y `TestSearchMemories_FiltersByMemoryTypesAndMinConfidence` fallaron antes de implementar `filterVisibleRelations`, carga de `Versions` en Point-in-Time y filtros `MemoryTypes`/`MinConfidence`.
+- green: `go test -count=1 -cover ./internal/application/retrieval/... ./internal/interfaces/rest/...` en verde (`87.5%` / `83.0%` cobertura); `go vet` limpio.
+- triangulation: validado rechazo `ErrValidation` en `min_confidence > 1`, `< 0`, `NaN` e `invalid memory_type`.
+- files: `internal/application/retrieval/service.go`, `internal/application/retrieval/service_test.go`, `internal/application/retrieval/hybrid.go`, `internal/application/retrieval/hybrid_test.go`, `internal/interfaces/rest/router.go`, `internal/interfaces/rest/rest_test.go`
+- risk: tier 1 (revisión fresca `917dcd7a`: `2 findings: 0 blockers, 2 nits`; ambos nits corregidos)
+- controls: tests ✅ (`87.5%`/`83.0%`) build/`go vet` ✅ `golangci-lint` ⚠️ not run (no instalado en PATH) traceability ✅ (`AC-02`)
