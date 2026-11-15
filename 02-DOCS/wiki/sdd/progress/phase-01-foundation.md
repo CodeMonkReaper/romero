@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T007 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/7
+- branch: `feat/t007-retrieval-feedback` (base `72039cf`)
+- red/green: stub `RetrievalService` and `FeedbackService` failed behavioral tests (`not implemented`), then passed with triangulation (`retrieval`: `87.8%`, `feedback`: `86.0%` statement coverage).
+- controls (`golang:1.27` + `golangci-lint:latest`): `gofmt -s -w` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go vet ./...` PASS, `golangci-lint run ./internal/application/capture/... ./internal/application/retrieval/... ./internal/application/feedback/...` (`0 issues.`), `CGO_ENABLED=1 go test -count=1 -race -cover` PASS.
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `human approval: not required`). Fresh-context Tier 1 Round 1 (`2 blockers`, `2 nits` — `ExecuteSupersedeReplacementTx` destination scope check, `confirmed_verified` version snapshot, `NewStatus` + `ErrOperational` wrapping) -> fixed -> Round 2 (`VERDICT: pass`, 0 blockers).
+- traceability: `AC-01`, `AC-04`, `AC-07`, `AC-08`, `AC-09`, `AC-T1`–`AC-T4`, `AC-T7`–`AC-T9`, `AC-T11`.
+
 ## T006 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/6
 - branch: `feat/t006-capture-service` (base `560e664`)

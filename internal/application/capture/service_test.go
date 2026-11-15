@@ -921,3 +921,57 @@ func TestCaptureService_SyncTaskSelectorAndArchiveNotFound(t *testing.T) {
 		t.Fatalf("archive failed: %v", err)
 	}
 }
+
+func TestCaptureService_ExecuteSupersedeReplacementTx(t *testing.T) {
+	store := newFakeMemoryStore()
+	svc, _ := capture.NewService(store, store, fakeTaskAccess{}, &fakeOpaqueQueue{}, nil)
+	projectID := uuid.New()
+	agentID := uuid.New()
+	auth := testAuth(identity.PrincipalUser, projectID, agentID, identity.ScopeProjectShared)
+
+	res, err := svc.CaptureMemory(context.Background(), auth, baseCaptureCmd(projectID))
+	if err != nil {
+		t.Fatalf("capture failed: %v", err)
+	}
+	repCmd := baseCaptureCmd(projectID)
+	repCmd.Content = "corrected content"
+	repCmd.EpistemicStatus = memory.EpistemicVerified
+
+	var repView *capture.MemoryView
+	err = store.ExecTx(context.Background(), func(reg memory.RepositoryRegistry) error {
+		oldMem, getErr := reg.Memories().GetMemoryByID(context.Background(), auth.TenantID, res.Memory.ID)
+		if getErr != nil {
+			return getErr
+		}
+		v, txErr := svc.ExecuteSupersedeReplacementTx(context.Background(), reg, auth, oldMem, repCmd, "corrected_by_user")
+		repView = v
+		return txErr
+	})
+	if err != nil || repView == nil || store.memories[res.Memory.ID].Status != memory.StatusSuperseded {
+		t.Fatalf("ExecuteSupersedeReplacementTx failed: err=%v repView=%+v", err, repView)
+	}
+}
+
+func TestCaptureService_ExecuteSupersedeReplacementTx_ScopeDenied(t *testing.T) {
+	store := newFakeMemoryStore()
+	svc, _ := capture.NewService(store, store, fakeTaskAccess{snap: capture.TaskAccessSnapshot{CanRead: true, CanWrite: false}}, &fakeOpaqueQueue{}, nil)
+	projectID := uuid.New()
+	agentID := uuid.New()
+	auth := testAuth(identity.PrincipalUser, projectID, agentID, identity.ScopeProjectShared, identity.ScopeTaskShared)
+
+	res, err := svc.CaptureMemory(context.Background(), auth, baseCaptureCmd(projectID))
+	if err != nil {
+		t.Fatalf("capture failed: %v", err)
+	}
+	repCmd := baseCaptureCmd(projectID)
+	repCmd.ScopeType = identity.ScopeGlobalPublic
+
+	err = store.ExecTx(context.Background(), func(reg memory.RepositoryRegistry) error {
+		oldMem, _ := reg.Memories().GetMemoryByID(context.Background(), auth.TenantID, res.Memory.ID)
+		_, txErr := svc.ExecuteSupersedeReplacementTx(context.Background(), reg, auth, oldMem, repCmd, "corrected_by_user")
+		return txErr
+	})
+	if !errors.Is(err, capture.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for unauthorized destination scope, got %v", err)
+	}
+}
