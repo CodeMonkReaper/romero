@@ -221,7 +221,11 @@ func (s *Service) GetSubgraph(ctx context.Context, auth identity.AuthContext, q 
 		return nil, ErrUnauthorized
 	}
 	if q.MemoryID == uuid.Nil || q.Hops < 0 || q.Hops > maxSearchHops {
-		return nil, fmt.Errorf("%w: memory_id must be valid and hops within [0, 3]", ErrValidation)
+		return nil, fmt.Errorf("%w: memory_id must be valid and hops within [1, 3]", ErrValidation)
+	}
+	hops := q.Hops
+	if hops == 0 {
+		hops = 2
 	}
 	if s.graphCache == nil {
 		return nil, fmt.Errorf("%w: graph projector not configured", ErrOperational)
@@ -274,11 +278,12 @@ func (s *Service) GetSubgraph(ctx context.Context, auth identity.AuthContext, q 
 		return nil, fmt.Errorf("%w: %v", ErrOperational, projErr)
 	}
 
-	// BFS over visible Zero-Trust edges up to q.Hops without cycles.
-	adj := make(map[uuid.UUID][]graph.AuthorizedEdge)
+	// Bidirectional BFS over visible Zero-Trust edges up to hops without cycles.
+	adj := make(map[uuid.UUID][]uuid.UUID)
 	conflictNodes := make(map[uuid.UUID]bool)
 	for _, e := range sub.Edges {
-		adj[e.FromID] = append(adj[e.FromID], e)
+		adj[e.FromID] = append(adj[e.FromID], e.ToID)
+		adj[e.ToID] = append(adj[e.ToID], e.FromID)
 		if e.RelationType == memory.RelationContradicts {
 			conflictNodes[e.FromID] = true
 			conflictNodes[e.ToID] = true
@@ -291,16 +296,16 @@ func (s *Service) GetSubgraph(ctx context.Context, auth identity.AuthContext, q 
 		curr := queue[0]
 		queue = queue[1:]
 		d := depthMap[curr]
-		if d >= q.Hops {
+		if d >= hops {
 			continue
 		}
-		for _, e := range adj[curr] {
-			if _, ok := visibleMems[e.ToID]; !ok {
+		for _, neighborID := range adj[curr] {
+			if _, ok := visibleMems[neighborID]; !ok {
 				continue
 			}
-			if _, seen := depthMap[e.ToID]; !seen {
-				depthMap[e.ToID] = d + 1
-				queue = append(queue, e.ToID)
+			if _, seen := depthMap[neighborID]; !seen {
+				depthMap[neighborID] = d + 1
+				queue = append(queue, neighborID)
 			}
 		}
 	}

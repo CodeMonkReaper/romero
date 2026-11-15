@@ -344,10 +344,13 @@ func TestRetrievalService_ValidationScopeAuthTaskAccessAndPureRead(t *testing.T)
 		t.Fatalf("expected 0 allowed audit events from SearchForContext, got %d", len(uow.allowed))
 	}
 
-	// GetSubgraph with conflict edge returns both nodes and edge.
-	sg, err := svc.GetSubgraph(context.Background(), auth, retrieval.SubgraphQuery{MemoryID: m1.ID, Hops: 2})
+	// GetSubgraph with conflict edge + incoming edge traverses bidirectionally and defaults hops=0 -> 2.
+	sg, err := svc.GetSubgraph(context.Background(), auth, retrieval.SubgraphQuery{MemoryID: m2.ID, Hops: 0})
 	if err != nil || len(sg.Nodes) != 2 || len(sg.Edges) != 1 || !sg.Nodes[0].HasConflictAlert {
-		t.Fatalf("unexpected conflict subgraph: %+v err=%v", sg, err)
+		t.Fatalf("unexpected bidirectional conflict subgraph from incoming target m2: %+v err=%v", sg, err)
+	}
+	if sg.Edges[0].FromMemoryID != m1.ID || sg.Edges[0].ToMemoryID != m2.ID {
+		t.Fatalf("expected edge direction m1 -> m2 preserved, got %+v", sg.Edges[0])
 	}
 
 	// Pure read-only invariant: AccessCount and Version unchanged.
