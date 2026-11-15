@@ -1,5 +1,12 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T010 — 2026-11-15 — verified (Phase 01 Complete)
+- issue: https://github.com/CodeMonkReaper/romero/issues/10
+- branch: `chore/t010-phase01-final-verification` (base `5457d01`)
+- controls (`golang:1.27` + `sqlc/sqlc:1.31.1` + `golangci-lint:latest` + `pgvector/pgvector:pg17`): `sqlc generate` (0 diffs), `go mod verify` (`all modules verified`), `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go vet ./...` PASS, `golangci-lint run` (`0 issues.`), `govulncheck ./...` (`No vulnerabilities found.`), `CGO_ENABLED=1 go test -p 1 -count=1 -race -cover ./...` PASS across all 16 packages against live PG17.
+- reports: [phase-01-foundation-final-2026-11-15.md](../verifications/phase-01-foundation-final-2026-11-15.md) · [phase-01-foundation-final.md](../reviews/phase-01-foundation-final.md).
+- traceability: `AC-01`–`AC-10`, `AC-T1`–`AC-T12` (all Phase 01 issues `#1`–`#10` and `#20` delivered).
+
 ## T009 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/9
 - branch: `feat/t009-integration-security` (base `c7d4294`)
