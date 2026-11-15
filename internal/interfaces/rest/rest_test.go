@@ -426,9 +426,9 @@ func TestREST_Phase02HybridContextSubgraphAndRelations(t *testing.T) {
 		t.Fatalf("expected 422 bad subgraph id, got %d", rec.Code)
 	}
 
-	// GET /system/status includes l1_graph metrics
+	// GET /system/status includes top-level L1 graph metrics
 	rec := doReq(http.MethodGet, "/api/v1/system/status", nil)
-	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"l1_graph"`)) {
-		t.Fatalf("expected 200 with l1_graph metrics, got %d (%s)", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"l1_graph_cache_enabled":true`)) {
+		t.Fatalf("expected 200 with l1_graph_cache_enabled metrics, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }

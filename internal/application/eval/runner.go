@@ -246,7 +246,7 @@ func RunDataset(ctx context.Context, datasetPath string, maxTokens, hops int) (*
 		leakage = float64(forbiddenLeaked) / float64(forbiddenChecked)
 	}
 
-	pass := ndcg >= 0.80 && multiHopRecall == 1.0 && obsoleteSuppression == 1.0 && leakage == 0.0
+	pass := ndcg >= 0.85 && multiHopRecall == 1.0 && obsoleteSuppression == 1.0 && leakage == 0.0
 	return &Report{
 		DatasetPath:             datasetPath,
 		CasesEvaluated:          len(ds.Queries),

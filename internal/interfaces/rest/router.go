@@ -313,10 +313,14 @@ type getSubgraphOutput struct {
 type systemStatusOutput struct {
 	Status int
 	Body   struct {
-		Status   string              `json:"status"`
-		Version  string              `json:"version"`
-		Database string              `json:"database"`
-		L1Graph  *cachel1.GraphStats `json:"l1_graph,omitempty"`
+		Status              string `json:"status"`
+		Version             string `json:"version"`
+		Database            string `json:"database"`
+		ActiveProfile       string `json:"active_profile,omitempty"`
+		L1GraphCacheEnabled bool   `json:"l1_graph_cache_enabled"`
+		L1NodesCount        int    `json:"l1_nodes_count"`
+		L1EdgesCount        int    `json:"l1_edges_count"`
+		L1EmbeddingsCount   int    `json:"l1_embeddings_count,omitempty"`
 	}
 }
 
@@ -644,6 +648,7 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 		out.Body.Version = deps.Version
 		out.Body.Status = "ok"
 		out.Body.Database = "connected"
+		out.Body.ActiveProfile = "balanced"
 		if deps.DB != nil {
 			if err := deps.DB.Ping(ctx); err != nil {
 				return nil, huma.Error503ServiceUnavailable("database unavailable")
@@ -651,7 +656,10 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 		}
 		if deps.L1Stats != nil {
 			st := deps.L1Stats.Stats()
-			out.Body.L1Graph = &st
+			out.Body.L1GraphCacheEnabled = st.Enabled
+			out.Body.L1NodesCount = st.NodesCount
+			out.Body.L1EdgesCount = st.EdgesCount
+			out.Body.L1EmbeddingsCount = st.EmbeddingsCount
 		}
 		return out, nil
 	})

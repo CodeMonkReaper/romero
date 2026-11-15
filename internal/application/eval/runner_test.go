@@ -19,7 +19,7 @@ func TestRunDataset_GoldenDatasetPassesThresholds(t *testing.T) {
 	if !rep.Pass {
 		t.Fatalf("expected golden dataset to pass, got %+v", rep)
 	}
-	if rep.NDCGAt5 < 0.80 || rep.MultiHopRecall != 1.0 || rep.ObsoleteSuppressionRate != 1.0 || rep.ZeroTrustLeakageRate != 0.0 {
+	if rep.NDCGAt5 < 0.85 || rep.MultiHopRecall != 1.0 || rep.ObsoleteSuppressionRate != 1.0 || rep.ZeroTrustLeakageRate != 0.0 {
 		t.Fatalf("unexpected metrics: %+v", rep)
 	}
 }
