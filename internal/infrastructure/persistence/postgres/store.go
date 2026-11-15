@@ -153,6 +153,18 @@ func (r *repoRegistry) Audit() memory.AuditLogger {
 	}
 }
 
+func (r *repoRegistry) SemanticNeighbors() memory.SemanticNeighborRepository {
+	return &semanticNeighborRepo{q: r.txQueries, tx: r.tx}
+}
+
+func (r *repoRegistry) Conflicts() memory.ConflictRepository {
+	return &conflictRepo{q: r.txQueries}
+}
+
+func (r *repoRegistry) Consolidation() memory.ConsolidationRepository {
+	return &consolidationRepo{q: r.txQueries}
+}
+
 // TaskAccessSnapshot captures effective task_shared permissions from one READ COMMITTED query.
 type TaskAccessSnapshot struct {
 	CanRead  bool
