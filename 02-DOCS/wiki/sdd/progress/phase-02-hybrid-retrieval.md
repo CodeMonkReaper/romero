@@ -4,7 +4,7 @@
 
 | Task | Issue | Status | Depends-on | Trace | Risk |
 | --- | --- | --- | --- | --- | --- |
-| `T001` | [#27](https://github.com/CodeMonkReaper/romero/issues/27) | `ready-for-agent` | — | `AC-01`..`AC-05`, `AC-07`, `AC-09`..`AC-11` | `1` |
+| `T001` | [#27](https://github.com/CodeMonkReaper/romero/issues/27) | `verified` | — | `AC-01`..`AC-05`, `AC-07`, `AC-09`..`AC-11` | `1` |
 | `T002` | [#28](https://github.com/CodeMonkReaper/romero/issues/28) | `ready-for-agent` | — | `AC-01`..`AC-03`, `AC-05`, `AC-08`..`AC-12` | `1` |
 | `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
 | `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
@@ -12,6 +12,14 @@
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `ready-for-agent` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T001 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/27
+- branch: `feat/t001-phase02-domain-engines` (base `f072e60`)
+- red/green: stub implementations failed assertions across `TestSelectSubmodularContext`, `TestRankCandidates`, `TestConductance`, `TestPropagateActivation`; then passed with triangulation covering RRF normal/degraded, governed epistemic/temporal/state scoring, submodular Facility Location + Jaccard fallback, 1–3 hop Zero-Trust activation, and explicit relation validation.
+- controls (`go1.27.3 windows/amd64`): `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go test -count=1 -cover ./internal/domain/memory/... ./internal/domain/graph/...` PASS (`memory`: `87.8%`, `graph`: `93.4%`). (`-race` and `golangci-lint` in `golang:1.27` container deferred to Docker availability / `T008` final gate).
+- risk & review: `rsc risk --base f072e60` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`4bb3bc81`): `2 findings: 0 blockers, 2 nits` (`VERDICT: pass`) — both nits (`NaN` guards and `hops=1` conflict alert consistency) fixed and re-verified.
+- traceability: `AC-01`, `AC-02`, `AC-03`, `AC-04`, `AC-05`, `AC-07`, `AC-09`, `AC-10`, `AC-11`.
 
 ## Decision queue
 
