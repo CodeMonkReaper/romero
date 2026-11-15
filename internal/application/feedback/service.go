@@ -187,7 +187,7 @@ func (s *Service) RecordFeedback(ctx context.Context, auth identity.AuthContext,
 	return result, nil
 }
 
-// ExecuteFeedbackTx applies feedback inside an already-open UnitOfWork transaction (reused by T011).
+// ExecuteFeedbackTx applies feedback inside an already-open UnitOfWork transaction.
 func (s *Service) ExecuteFeedbackTx(
 	ctx context.Context,
 	reg memory.RepositoryRegistry,
@@ -205,6 +205,35 @@ func (s *Service) ExecuteFeedbackTx(
 	if accessErr := s.authorizeTarget(ctx, auth, mem); accessErr != nil {
 		return nil, accessErr
 	}
+
+	return s.executeFeedbackOnLoaded(ctx, reg, auth, mem, cmd)
+}
+
+// ExecuteOpaqueFeedbackTx applies deferred opaque feedback inside the worker's READ COMMITTED
+// transaction after the worker has already reauthorized TaskWrite and verified task_shared scope.
+func (s *Service) ExecuteOpaqueFeedbackTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	cmd FeedbackCommand,
+) (*FeedbackResult, error) {
+	mem, err := reg.Memories().GetMemoryByID(ctx, auth.TenantID, cmd.MemoryID)
+	if err != nil {
+		if errors.Is(err, memory.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return s.executeFeedbackOnLoaded(ctx, reg, auth, mem, cmd)
+}
+
+func (s *Service) executeFeedbackOnLoaded(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	mem *memory.Memory,
+	cmd FeedbackCommand,
+) (*FeedbackResult, error) {
 
 	delta, err := memory.ApplyFeedback(mem.AlphaScore, mem.BetaScore, mem.UtilityScore, mem.EpistemicStatus, mem.Status, cmd.Signal)
 	if err != nil {

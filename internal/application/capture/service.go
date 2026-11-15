@@ -557,6 +557,172 @@ func (s *Service) ExecuteSupersedeReplacementTx(
 	return s.executeSupersedeTx(ctx, reg, auth, oldMem, cmd, reason, true, s.clock())
 }
 
+// ExecuteOpaqueTargetTx executes a deferred opaque update, supersede, or archive inside an existing transaction.
+func (s *Service) ExecuteOpaqueTargetTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	op string,
+	targetID *uuid.UUID,
+	payload json.RawMessage,
+) (*uuid.UUID, error) {
+	if targetID == nil || *targetID == uuid.Nil {
+		return nil, fmt.Errorf("%w: target_memory_id is required", ErrValidation)
+	}
+	mem, err := reg.Memories().GetMemoryByID(ctx, auth.TenantID, *targetID)
+	if err != nil {
+		if errors.Is(err, memory.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if mem.Status.IsClosed() {
+		return nil, ErrConflict
+	}
+
+	switch op {
+	case string(OpaqueOpUpdate):
+		var cmd UpdateCommand
+		if err := json.Unmarshal(payload, &cmd); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		}
+		sanitized, err := security.SanitizeInput(cmd.Summary, cmd.Content)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		}
+		if cmd.Importance != nil && !isValidUnitFloat(*cmd.Importance) {
+			return nil, fmt.Errorf("%w: importance must be within [0, 1]", ErrValidation)
+		}
+		v, err := s.executeUpdateOnLoaded(ctx, reg, auth, mem, cmd, sanitized)
+		if err != nil {
+			return nil, err
+		}
+		return &v.ID, nil
+
+	case string(OpaqueOpSupersede):
+		var cmd ExplicitSupersedeCommand
+		if err := json.Unmarshal(payload, &cmd); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		}
+		if err := auth.CanAssignEpistemic(string(cmd.Capture.EpistemicStatus)); err != nil {
+			return nil, ErrForbidden
+		}
+		decision, decErr := memory.DecideTopicSupersession(mem.EpistemicStatus, cmd.Capture.EpistemicStatus, true, auth.PrincipalType, cmd.ChangeReason)
+		if decErr != nil {
+			switch {
+			case errors.Is(decErr, memory.ErrForbidden):
+				return nil, ErrForbidden
+			case errors.Is(decErr, memory.ErrMissingChangeReason):
+				return nil, fmt.Errorf("%w: %v", ErrValidation, decErr)
+			case errors.Is(decErr, memory.ErrEpistemicDowngradeNotAllowed):
+				return nil, fmt.Errorf("%w: %v", ErrConflict, decErr)
+			default:
+				return nil, decErr
+			}
+		}
+		captureCmd := cmd.Capture
+		if captureCmd.ProjectID == nil {
+			captureCmd.ProjectID = mem.ProjectID
+		}
+		if captureCmd.TaskID == "" {
+			captureCmd.TaskID = mem.TaskID
+		}
+		if captureCmd.TopicKey == "" {
+			captureCmd.TopicKey = mem.TopicKey
+		}
+		if captureCmd.ScopeType != identity.ScopeTaskShared ||
+			captureCmd.ProjectID == nil || mem.ProjectID == nil || *captureCmd.ProjectID != *mem.ProjectID ||
+			captureCmd.TaskID != mem.TaskID {
+			return nil, ErrForbidden
+		}
+		if _, err := validateCaptureCommand(captureCmd); err != nil {
+			return nil, err
+		}
+		now := s.clock()
+		v, err := s.executeSupersedeTx(ctx, reg, auth, mem, captureCmd, cmd.ChangeReason, decision.CloseOldValidUntil, now)
+		if err != nil {
+			return nil, err
+		}
+		if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
+			ID:            uuid.New(),
+			TenantID:      &auth.TenantID,
+			PrincipalID:   &auth.PrincipalID,
+			AgentID:       auth.AgentID,
+			Operation:     "supersede_memory",
+			ResourceType:  "memory",
+			ResourceID:    &mem.ID,
+			ScopeUsed:     string(mem.ScopeType),
+			CorrelationID: cmd.CorrelationID,
+			Outcome:       memory.AuditAllowed,
+			Details:       map[string]any{"new_memory_id": v.ID.String(), "opaque": true},
+			CreatedAt:     now,
+		}); err != nil {
+			return nil, err
+		}
+		return &v.ID, nil
+
+	case string(OpaqueOpArchive):
+		var cmd ArchiveCommand
+		if err := json.Unmarshal(payload, &cmd); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		}
+		now := s.clock()
+		if err := reg.Memories().CloseMemoryVersionValidity(ctx, mem.ID, mem.Version, now); err != nil {
+			return nil, err
+		}
+		mem.Status = memory.StatusArchived
+		mem.Version++
+		mem.UpdatedAt = now
+		mem.Clocks.ValidUntil = &now
+		if err := reg.Memories().UpdateMemoryState(ctx, *mem); err != nil {
+			return nil, err
+		}
+		if err := reg.Memories().InsertMemoryVersion(ctx, memory.MemoryVersion{
+			ID:              uuid.New(),
+			MemoryID:        mem.ID,
+			Version:         mem.Version,
+			Summary:         mem.Summary,
+			Content:         mem.Content,
+			Tags:            append([]string(nil), mem.Tags...),
+			Entities:        append([]string(nil), mem.Entities...),
+			Metadata:        cloneMap(mem.Metadata),
+			EpistemicStatus: mem.EpistemicStatus,
+			AlphaScore:      mem.AlphaScore,
+			BetaScore:       mem.BetaScore,
+			Importance:      mem.Importance,
+			UtilityScore:    mem.UtilityScore,
+			Status:          memory.StatusArchived,
+			ValidFrom:       now,
+			ValidUntil:      &now,
+			ChangedBySource: &mem.PrimarySourceID,
+			ChangeReason:    cmd.Reason,
+			CreatedAt:       now,
+		}); err != nil {
+			return nil, err
+		}
+		if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
+			ID:            uuid.New(),
+			TenantID:      &auth.TenantID,
+			PrincipalID:   &auth.PrincipalID,
+			AgentID:       auth.AgentID,
+			Operation:     "archive_memory",
+			ResourceType:  "memory",
+			ResourceID:    &mem.ID,
+			ScopeUsed:     string(mem.ScopeType),
+			CorrelationID: cmd.CorrelationID,
+			Outcome:       memory.AuditAllowed,
+			Details:       map[string]any{"opaque": true},
+			CreatedAt:     now,
+		}); err != nil {
+			return nil, err
+		}
+		return &mem.ID, nil
+
+	default:
+		return nil, fmt.Errorf("%w: unsupported opaque operation %q", ErrValidation, op)
+	}
+}
+
 func (s *Service) executeSupersedeTx(
 	ctx context.Context,
 	reg memory.RepositoryRegistry,
