@@ -17,11 +17,15 @@ type Querier interface {
 	CompleteMemoryJob(ctx context.Context, arg CompleteMemoryJobParams) error
 	CompleteOpaqueRequest(ctx context.Context, arg CompleteOpaqueRequestParams) (int64, error)
 	CountTenantProjectsByIDs(ctx context.Context, arg CountTenantProjectsByIDsParams) (int64, error)
+	DeactivateConflictEdge(ctx context.Context, arg DeactivateConflictEdgeParams) (int64, error)
+	DeactivateConflictsByMemoryID(ctx context.Context, arg DeactivateConflictsByMemoryIDParams) ([]uuid.UUID, error)
 	EnqueueMemoryJob(ctx context.Context, arg EnqueueMemoryJobParams) error
 	EvaluateTaskAccessSnapshot(ctx context.Context, arg EvaluateTaskAccessSnapshotParams) (EvaluateTaskAccessSnapshotRow, error)
 	FailMemoryJob(ctx context.Context, arg FailMemoryJobParams) error
+	FindSameScopeSemanticNeighbors(ctx context.Context, arg FindSameScopeSemanticNeighborsParams) ([]FindSameScopeSemanticNeighborsRow, error)
 	GetAgentByExternalKey(ctx context.Context, arg GetAgentByExternalKeyParams) (Agent, error)
 	GetAgentByID(ctx context.Context, arg GetAgentByIDParams) (Agent, error)
+	GetConflictForUpdate(ctx context.Context, arg GetConflictForUpdateParams) (GetConflictForUpdateRow, error)
 	GetMemoriesByIDs(ctx context.Context, arg GetMemoriesByIDsParams) ([]GetMemoriesByIDsRow, error)
 	GetMemoryByID(ctx context.Context, arg GetMemoryByIDParams) (GetMemoryByIDRow, error)
 	GetMemoryByIdempotencyKey(ctx context.Context, arg GetMemoryByIdempotencyKeyParams) (GetMemoryByIdempotencyKeyRow, error)
@@ -35,6 +39,7 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, arg GetProjectBySlugParams) (Project, error)
 	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
 	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
+	HasActiveConflicts(ctx context.Context, arg HasActiveConflictsParams) (bool, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent, error)
 	InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error
 	InsertMemory(ctx context.Context, arg InsertMemoryParams) error
@@ -46,7 +51,10 @@ type Querier interface {
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertSource(ctx context.Context, arg InsertSourceParams) error
 	InsertTenant(ctx context.Context, arg InsertTenantParams) (Tenant, error)
+	ListActiveConflicts(ctx context.Context, arg ListActiveConflictsParams) ([]ListActiveConflictsRow, error)
 	ListActiveRelationsByMemoryID(ctx context.Context, arg ListActiveRelationsByMemoryIDParams) ([]MemoryRelation, error)
+	ListActiveVerifiedByProject(ctx context.Context, arg ListActiveVerifiedByProjectParams) ([]ListActiveVerifiedByProjectRow, error)
+	ListREMConsolidationCandidates(ctx context.Context, arg ListREMConsolidationCandidatesParams) ([]ListREMConsolidationCandidatesRow, error)
 	ListVersionsByMemoryID(ctx context.Context, memoryID uuid.UUID) ([]MemoryVersion, error)
 	LoadProjectGraphEmbeddings(ctx context.Context, arg LoadProjectGraphEmbeddingsParams) ([]LoadProjectGraphEmbeddingsRow, error)
 	LoadProjectGraphMemories(ctx context.Context, arg LoadProjectGraphMemoriesParams) ([]LoadProjectGraphMemoriesRow, error)

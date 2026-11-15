@@ -7,7 +7,7 @@
 | Task | Issue | Status | Notes |
 | --- | --- | --- | --- |
 | `T001` | [#44](https://github.com/CodeMonkReaper/romero/issues/44) | in_review | Tier 2 (`governor-infra`), 3-reviewer panel approved, PR pending human approval |
-| `T002` | [#45](https://github.com/CodeMonkReaper/romero/issues/45) | pending | Tier 1, parallel-safe with `T001` |
+| `T002` | [#45](https://github.com/CodeMonkReaper/romero/issues/45) | in_review | Tier 1 reviewer approved; PR stacked on `feat/t001-phase03-domain-governor` |
 | `T003` | [#46](https://github.com/CodeMonkReaper/romero/issues/46) | pending | Blocked by `#44`, `#45` |
 | `T004` | [#47](https://github.com/CodeMonkReaper/romero/issues/47) | pending | Tier 1, parallel-safe with `T005`, blocked by `#44`–`#46` |
 | `T005` | [#48](https://github.com/CodeMonkReaper/romero/issues/48) | pending | Tier 1, parallel-safe with `T004`, blocked by `#44`–`#46` |
