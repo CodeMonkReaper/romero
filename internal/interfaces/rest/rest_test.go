@@ -412,8 +412,8 @@ func TestREST_Phase02HybridContextSubgraphAndRelations(t *testing.T) {
 	if rec := doReq(http.MethodPost, "/api/v1/memories/search", map[string]any{
 		"query": "jwt", "limit": 5, "hops": 2,
 		"memory_types": []string{"procedural"}, "min_confidence": 0.75,
-	}); rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 search, got %d (%s)", rec.Code, rec.Body.String())
+	}); rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"candidates"`)) {
+		t.Fatalf("expected 200 search with candidates, got %d (%s)", rec.Code, rec.Body.String())
 	}
 
 	// POST /memories/context -> 200

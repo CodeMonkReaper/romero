@@ -576,7 +576,7 @@ func validateSearchQuery(q SearchQuery) error {
 			return fmt.Errorf("%w: invalid memory_type %q", ErrValidation, mt)
 		}
 	}
-	if q.MinConfidence != nil && (*q.MinConfidence < 0 || *q.MinConfidence > 1) {
+	if q.MinConfidence != nil && !(*q.MinConfidence >= 0 && *q.MinConfidence <= 1) {
 		return fmt.Errorf("%w: min_confidence must be within [0, 1]", ErrValidation)
 	}
 	return nil

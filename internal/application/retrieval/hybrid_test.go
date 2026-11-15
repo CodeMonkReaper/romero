@@ -445,4 +445,17 @@ func TestSearchMemories_FiltersByMemoryTypesAndMinConfidence(t *testing.T) {
 	}); !errors.Is(err, retrieval.ErrValidation) {
 		t.Fatalf("expected ErrValidation for min_confidence > 1, got %v", err)
 	}
+	negConf := float32(-0.1)
+	if _, err := svc.SearchMemories(context.Background(), auth, retrieval.SearchQuery{
+		Query:         "proc",
+		MinConfidence: &negConf,
+	}); !errors.Is(err, retrieval.ErrValidation) {
+		t.Fatalf("expected ErrValidation for min_confidence < 0, got %v", err)
+	}
+	if _, err := svc.SearchMemories(context.Background(), auth, retrieval.SearchQuery{
+		Query:       "proc",
+		MemoryTypes: []memory.MemoryType{"invalid_type"},
+	}); !errors.Is(err, retrieval.ErrValidation) {
+		t.Fatalf("expected ErrValidation for invalid memory_type, got %v", err)
+	}
 }
