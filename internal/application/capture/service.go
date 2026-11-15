@@ -287,7 +287,7 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 			if err := s.closeAndSupersedeOldStateTx(ctx, reg, oldMem, newID, cmd.ChangeReason, now); err != nil {
 				return err
 			}
-			restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, oldMem.TenantID, oldMem.ID, now)
+			restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, oldMem.TenantID, oldMem.ID, now, captureCmd.TopicKey, captureCmd.ScopeType)
 			if cleanErr != nil {
 				return cleanErr
 			}
@@ -401,7 +401,7 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 			return err
 		}
 		var cleanErr error
-		restored, cleanErr = cleanupOrphanConflictsTx(ctx, reg, mem.TenantID, mem.ID, now)
+		restored, cleanErr = cleanupOrphanConflictsTx(ctx, reg, mem.TenantID, mem.ID, now, "", "")
 		if cleanErr != nil {
 			return cleanErr
 		}
@@ -550,7 +550,7 @@ func (s *Service) executeCaptureTxDetailed(
 		if err := s.closeAndSupersedeOldStateTx(ctx, reg, supersedingOld, newID, "superseded by topic_key", now); err != nil {
 			return nil, false, delta, err
 		}
-		restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, supersedingOld.TenantID, supersedingOld.ID, now)
+		restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, supersedingOld.TenantID, supersedingOld.ID, now, cmd.TopicKey, cmd.ScopeType)
 		if cleanErr != nil {
 			return nil, false, delta, cleanErr
 		}
@@ -1579,6 +1579,8 @@ func cleanupOrphanConflictsTx(
 	tenantID uuid.UUID,
 	closedMemoryID uuid.UUID,
 	now time.Time,
+	skipTopicKey string,
+	skipScope identity.ScopeType,
 ) ([]memory.Memory, error) {
 	provider, ok := reg.(semanticNeighborTxProvider)
 	if !ok {
@@ -1592,6 +1594,9 @@ func cleanupOrphanConflictsTx(
 	for _, peerID := range peers {
 		peer, err := reg.Memories().GetMemoryByID(ctx, tenantID, peerID)
 		if err != nil || peer.Status != memory.StatusConflicted {
+			continue
+		}
+		if skipTopicKey != "" && peer.TopicKey == skipTopicKey && peer.ScopeType == skipScope {
 			continue
 		}
 		hasOther, err := provider.SemanticNeighbors().HasActiveConflicts(ctx, tenantID, peerID, now)

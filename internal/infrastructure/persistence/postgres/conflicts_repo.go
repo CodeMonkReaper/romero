@@ -137,7 +137,7 @@ func (r *semanticNeighborRepo) DeactivateConflictsByMemoryID(ctx context.Context
 		validUntil = time.Now().UTC()
 	}
 	return r.q.DeactivateConflictsByMemoryID(ctx, sqlcgen.DeactivateConflictsByMemoryIDParams{
-		ValidUntil: &validUntil,
+		ValidUntil: validUntil,
 		TenantID:   tenantID,
 		MemoryID:   memoryID,
 	})
@@ -281,7 +281,7 @@ func (r *conflictRepo) DeactivateConflictEdge(ctx context.Context, tenantID, con
 		validUntil = time.Now().UTC()
 	}
 	rows, err := r.q.DeactivateConflictEdge(ctx, sqlcgen.DeactivateConflictEdgeParams{
-		ValidUntil: &validUntil,
+		ValidUntil: validUntil,
 		ConflictID: conflictID,
 		TenantID:   tenantID,
 	})

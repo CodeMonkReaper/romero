@@ -254,7 +254,7 @@ FOR UPDATE OF r, fm, tm;
 -- name: DeactivateConflictEdge :execrows
 UPDATE memory_relations
 SET is_active = FALSE,
-    valid_until = @valid_until
+    valid_until = GREATEST(valid_from, @valid_until::timestamptz)
 WHERE id = @conflict_id
   AND tenant_id = @tenant_id
   AND relation_type = 'contradicts'
@@ -263,7 +263,7 @@ WHERE id = @conflict_id
 -- name: DeactivateConflictsByMemoryID :many
 UPDATE memory_relations
 SET is_active = FALSE,
-    valid_until = @valid_until
+    valid_until = GREATEST(valid_from, @valid_until::timestamptz)
 WHERE tenant_id = @tenant_id
   AND relation_type = 'contradicts'
   AND is_active = TRUE
