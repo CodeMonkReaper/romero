@@ -102,12 +102,18 @@ type FeedbackResult struct {
 
 // Service orchestrates Zero-Trust feedback recording, quarantine, and atomic replacement.
 type Service struct {
-	uow      memory.UnitOfWork
-	audit    memory.AuditLogger
-	access   TaskAccessChecker
-	opaque   OpaqueFeedbackEnqueuer
-	replacer ReplacementExecutor
-	clock    func() time.Time
+	uow           memory.UnitOfWork
+	audit         memory.AuditLogger
+	access        TaskAccessChecker
+	opaque        OpaqueFeedbackEnqueuer
+	replacer      ReplacementExecutor
+	graphNotifier memory.GraphMutationNotifier
+	clock         func() time.Time
+}
+
+// SetGraphNotifier attaches an optional write-through L1 Cognitive Graph notifier.
+func (s *Service) SetGraphNotifier(n memory.GraphMutationNotifier) {
+	s.graphNotifier = n
 }
 
 // NewService constructs a FeedbackService with its required transactional and security ports.
@@ -183,6 +189,15 @@ func (s *Service) RecordFeedback(ctx context.Context, auth identity.AuthContext,
 	}
 	if err != nil {
 		return nil, err
+	}
+	if result != nil && !result.Accepted && s.graphNotifier != nil {
+		if result.Quarantined {
+			s.graphNotifier.ApplyMemoryStatusChange(auth.TenantID, nil, result.MemoryID, memory.StatusConflicted, nil)
+		}
+		if result.ReplacementMemoryID != nil {
+			now := s.clock()
+			s.graphNotifier.ApplyMemoryStatusChange(auth.TenantID, nil, result.MemoryID, memory.StatusSuperseded, &now)
+		}
 	}
 	return result, nil
 }

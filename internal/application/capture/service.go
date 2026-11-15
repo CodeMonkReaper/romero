@@ -23,11 +23,17 @@ import (
 // Service orchestrates Zero-Trust memory capture, bitemporal updates, explicit
 // supersession, archival, and deferred opaque queuing for write-only task_shared actors.
 type Service struct {
-	uow    memory.UnitOfWork
-	audit  memory.AuditLogger
-	access TaskAccessChecker
-	opaque OpaqueRequestEnqueuer
-	clock  func() time.Time
+	uow           memory.UnitOfWork
+	audit         memory.AuditLogger
+	access        TaskAccessChecker
+	opaque        OpaqueRequestEnqueuer
+	graphNotifier memory.GraphMutationNotifier
+	clock         func() time.Time
+}
+
+// SetGraphNotifier attaches an optional write-through L1 Cognitive Graph notifier.
+func (s *Service) SetGraphNotifier(n memory.GraphMutationNotifier) {
+	s.graphNotifier = n
 }
 
 // NewService constructs a CaptureService with its required transactional and security ports.
@@ -95,17 +101,31 @@ func (s *Service) CaptureMemory(ctx context.Context, auth identity.AuthContext, 
 
 	var view *MemoryView
 	var created bool
+	var denied bool
+	var deniedReason string
 	err = s.uow.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
 		v, cr, txErr := s.ExecuteCaptureTx(ctx, reg, auth, cmd)
 		if txErr != nil {
+			if errors.Is(txErr, ErrNotFound) || errors.Is(txErr, ErrForbidden) {
+				denied = true
+				deniedReason = txErr.Error()
+			}
 			return txErr
 		}
 		view = v
 		created = cr
 		return nil
 	})
+	if denied {
+		if auditErr := s.recordDenied(ctx, auth, "capture_memory", "memory", nil, string(cmd.ScopeType), cmd.CorrelationID, map[string]any{"reason": deniedReason}); auditErr != nil {
+			return nil, auditErr
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	if created && view != nil && s.graphNotifier != nil {
+		s.notifyCapturedMemory(view, cmd.Relations)
 	}
 	return &CaptureResult{Created: created, Memory: view}, nil
 }
@@ -163,6 +183,9 @@ func (s *Service) UpdateMemory(ctx context.Context, auth identity.AuthContext, m
 	}
 	if err != nil {
 		return nil, err
+	}
+	if out != nil && s.graphNotifier != nil {
+		s.graphNotifier.ApplyMemoryUpsert(memoryFromView(out))
 	}
 	return &MutationResult{Memory: out}, nil
 }
@@ -305,6 +328,14 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 	if err != nil {
 		return nil, err
 	}
+	if res != nil && s.graphNotifier != nil {
+		if res.OldMemory != nil {
+			s.graphNotifier.ApplyMemoryStatusChange(res.OldMemory.TenantID, res.OldMemory.ProjectID, res.OldMemory.ID, res.OldMemory.Status, res.OldMemory.ValidUntil)
+		}
+		if res.NewMemory != nil {
+			s.graphNotifier.ApplyMemoryUpsert(memoryFromView(res.NewMemory))
+		}
+	}
 	return res, nil
 }
 
@@ -404,6 +435,9 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 	if err != nil {
 		return nil, err
 	}
+	if out != nil && s.graphNotifier != nil {
+		s.graphNotifier.ApplyMemoryStatusChange(out.TenantID, out.ProjectID, out.ID, out.Status, out.ValidUntil)
+	}
 	return &MutationResult{Memory: out}, nil
 }
 
@@ -498,6 +532,10 @@ func (s *Service) ExecuteCaptureTx(
 		}); err != nil {
 			return nil, false, err
 		}
+	}
+
+	if err := s.insertExplicitRelationsTx(ctx, reg, auth, view, cmd.Relations, now); err != nil {
+		return nil, false, err
 	}
 
 	if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
@@ -1293,6 +1331,9 @@ func validateCaptureCommand(cmd CaptureCommand) (security.SanitizedPayload, erro
 	if !isValidUnitFloat(cmd.Importance) {
 		return security.SanitizedPayload{}, fmt.Errorf("%w: importance must be within [0, 1]", ErrValidation)
 	}
+	if _, relErr := memory.ValidateExplicitRelations(cmd.Relations); relErr != nil {
+		return security.SanitizedPayload{}, fmt.Errorf("%w: %v", ErrValidation, relErr)
+	}
 	sanitized, err := security.SanitizeInput(cmd.Summary, cmd.Content)
 	if err != nil {
 		return security.SanitizedPayload{}, fmt.Errorf("%w: %v", ErrValidation, err)
@@ -1327,4 +1368,155 @@ func mapDomainWriteErr(err error) error {
 		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 	return ErrForbidden
+}
+
+func (s *Service) insertExplicitRelationsTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	fromView *MemoryView,
+	rels []memory.ExplicitRelationInput,
+	now time.Time,
+) error {
+	validated, err := memory.ValidateExplicitRelations(rels)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	for _, rel := range validated {
+		if rel.ToMemoryID == fromView.ID {
+			return fmt.Errorf("%w: %v", ErrValidation, memory.ErrSelfLoopRelation)
+		}
+		target, getErr := reg.Memories().GetMemoryByID(ctx, auth.TenantID, rel.ToMemoryID)
+		if getErr != nil {
+			if errors.Is(getErr, memory.ErrNotFound) {
+				return ErrNotFound
+			}
+			return getErr
+		}
+		readable, checkErr := s.canReadMemoryTarget(ctx, auth, target)
+		if checkErr != nil {
+			return checkErr
+		}
+		if !readable {
+			return ErrNotFound
+		}
+		if err := reg.Memories().InsertMemoryRelation(ctx, memory.MemoryRelation{
+			ID:           uuid.New(),
+			TenantID:     auth.TenantID,
+			ProjectID:    fromView.ProjectID,
+			FromMemoryID: fromView.ID,
+			ToMemoryID:   target.ID,
+			RelationType: rel.RelationType,
+			Weight:       rel.Weight,
+			SourceID:     &fromView.PrimarySourceID,
+			ValidFrom:    now,
+			IsActive:     true,
+			Notes:        rel.Notes,
+			CreatedAt:    now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) canReadMemoryTarget(ctx context.Context, auth identity.AuthContext, target *memory.Memory) (bool, error) {
+	if target == nil {
+		return false, nil
+	}
+	scopeTarget := identity.MemoryScopeTarget{
+		TenantID:     target.TenantID,
+		ProjectID:    target.ProjectID,
+		OwnerAgentID: target.OwnerAgentID,
+		ScopeType:    target.ScopeType,
+		TaskID:       target.TaskID,
+	}
+	if target.ScopeType == identity.ScopeTaskShared {
+		if target.ProjectID == nil || target.TaskID == "" || !slices.Contains(auth.AllowedScopes, identity.ScopeTaskShared) {
+			return false, nil
+		}
+		if !auth.IsAdmin && !slices.Contains(auth.AllowedProjects, *target.ProjectID) {
+			return false, nil
+		}
+		if s.access == nil {
+			return false, ErrOperational
+		}
+		snap, err := s.access.EvaluateTaskAccess(ctx, identity.TaskPermissionQuery{
+			TenantID:    auth.TenantID,
+			ProjectID:   *target.ProjectID,
+			TaskID:      target.TaskID,
+			PrincipalID: auth.PrincipalID,
+		})
+		if err != nil {
+			return false, fmt.Errorf("%w: %v", ErrOperational, err)
+		}
+		return snap.CanRead, nil
+	}
+	return auth.CanReadMemory(scopeTarget, ""), nil
+}
+
+func (s *Service) notifyCapturedMemory(view *MemoryView, rels []memory.ExplicitRelationInput) {
+	if s.graphNotifier == nil || view == nil {
+		return
+	}
+	s.graphNotifier.ApplyMemoryUpsert(memoryFromView(view))
+	validated, err := memory.ValidateExplicitRelations(rels)
+	if err != nil || len(validated) == 0 {
+		return
+	}
+	edges := make([]memory.MemoryRelation, 0, len(validated))
+	for _, r := range validated {
+		edges = append(edges, memory.MemoryRelation{
+			ID:           uuid.New(),
+			TenantID:     view.TenantID,
+			ProjectID:    view.ProjectID,
+			FromMemoryID: view.ID,
+			ToMemoryID:   r.ToMemoryID,
+			RelationType: r.RelationType,
+			Weight:       r.Weight,
+			ValidFrom:    view.ValidFrom,
+			IsActive:     true,
+			Notes:        r.Notes,
+			CreatedAt:    view.CreatedAt,
+		})
+	}
+	s.graphNotifier.ApplyRelationsAdded(edges)
+}
+
+func memoryFromView(v *MemoryView) memory.Memory {
+	return memory.Memory{
+		ID:              v.ID,
+		TenantID:        v.TenantID,
+		ProjectID:       v.ProjectID,
+		OwnerAgentID:    v.OwnerAgentID,
+		TaskID:          v.TaskID,
+		Type:            v.Type,
+		ScopeType:       v.ScopeType,
+		Status:          v.Status,
+		TopicKey:        v.TopicKey,
+		Summary:         v.Summary,
+		Content:         v.Content,
+		ContentSHA256:   v.ContentSHA256,
+		TokenCount:      v.TokenCount,
+		Tags:            append([]string(nil), v.Tags...),
+		Entities:        append([]string(nil), v.Entities...),
+		EpistemicStatus: v.EpistemicStatus,
+		AlphaScore:      v.AlphaScore,
+		BetaScore:       v.BetaScore,
+		Confidence:      v.Confidence,
+		Importance:      v.Importance,
+		UtilityScore:    v.UtilityScore,
+		AccessCount:     v.AccessCount,
+		Version:         v.Version,
+		NLIChecked:      v.NLIChecked,
+		PrimarySourceID: v.PrimarySourceID,
+		Clocks: memory.TriTemporalWindow{
+			ObservedAt: v.ObservedAt,
+			ValidFrom:  v.ValidFrom,
+			ValidUntil: v.ValidUntil,
+			CreatedAt:  v.CreatedAt,
+		},
+		UpdatedAt: v.UpdatedAt,
+		Metadata:  cloneMap(v.Metadata),
+	}
 }
