@@ -6,12 +6,19 @@
 | --- | --- | --- | --- | --- | --- |
 | `T001` | [#27](https://github.com/CodeMonkReaper/romero/issues/27) | `verified` | — | `AC-01`..`AC-05`, `AC-07`, `AC-09`..`AC-11` | `1` |
 | `T002` | [#28](https://github.com/CodeMonkReaper/romero/issues/28) | `verified` | — | `AC-01`..`AC-03`, `AC-05`, `AC-08`..`AC-12` | `1` |
-| `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
+| `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `verified` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
 | `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `ready-for-agent` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T003 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/29
+- branch: `feat/t003-phase02-neural-l1-worker` (base `16b126a`)
+- controls (`go1.27.3`): `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go test -count=1 -cover ./internal/infrastructure/neural/... ./internal/infrastructure/cachel1/... ./internal/application/jobs/...` PASS (`neural`: `88.6%`, `cachel1`: `81.7%`, `jobs`: `87.0%`).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`2557f769`): `2 findings: 0 blockers, 2 nits` (`VERDICT: pass`) — both nits (`ensureLoaded` double-check under lock + `failWithBackoff` on `GetMemoriesByIDs` error) fixed and re-verified.
+- traceability: `AC-02`, `AC-03`, `AC-06`, `AC-08`, `AC-09`, `AC-10`.
 
 ## T002 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/28

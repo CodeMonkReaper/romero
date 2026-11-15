@@ -101,7 +101,12 @@ func (w *EmbeddingWorker) ProcessOnce(ctx context.Context) (int, error) {
 	for tenantID, ids := range byTenant {
 		mems, mErr := w.memories.GetMemoriesByIDs(ctx, tenantID, ids)
 		if mErr != nil {
-			return 0, mErr
+			for _, job := range claimed {
+				if job.TenantID == tenantID {
+					w.failWithBackoff(ctx, job, mErr, now)
+				}
+			}
+			continue
 		}
 		for id, m := range mems {
 			memMap[id] = m

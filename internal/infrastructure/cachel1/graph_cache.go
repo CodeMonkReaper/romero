@@ -122,16 +122,25 @@ func (g *CognitiveGraph) ensureLoaded(ctx context.Context, tenantID uuid.UUID, p
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.loaded[key] {
+		return nil
+	}
 	for _, m := range mems {
-		g.nodes[m.ID] = m
+		if _, exists := g.nodes[m.ID]; !exists {
+			g.nodes[m.ID] = m
+		}
 	}
 	for _, r := range rels {
-		g.edges[r.ID] = r
+		if _, exists := g.edges[r.ID]; !exists {
+			g.edges[r.ID] = r
+		}
 	}
 	for id, v := range vecs {
-		cp := make([]float32, len(v))
-		copy(cp, v)
-		g.vecs[id] = cp
+		if _, exists := g.vecs[id]; !exists {
+			cp := make([]float32, len(v))
+			copy(cp, v)
+			g.vecs[id] = cp
+		}
 	}
 	g.loaded[key] = true
 	return nil
