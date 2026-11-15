@@ -14,6 +14,7 @@ import (
 	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/feedback"
 	"github.com/romero-project/romero/internal/application/retrieval"
+	"github.com/romero-project/romero/internal/domain/governor"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/domain/provenance"
@@ -58,14 +59,17 @@ type StatusChecker interface {
 
 // RouterDeps groups dependencies required to build the ROMERO REST HTTP handler.
 type RouterDeps struct {
-	Auth      Authenticator
-	Capture   CaptureService
-	Retrieval RetrievalService
-	Context   ContextService
-	Feedback  FeedbackService
-	DB        StatusChecker
-	L1Stats   L1StatsProvider
-	Version   string
+	Auth          Authenticator
+	Capture       CaptureService
+	Retrieval     RetrievalService
+	Context       ContextService
+	Feedback      FeedbackService
+	Conflicts     ConflictService
+	Consolidation ConsolidationService
+	Governor      GovernorProvider
+	DB            StatusChecker
+	L1Stats       L1StatsProvider
+	Version       string
 }
 
 // NewRouter constructs the Huma v2 OpenAPI 3.1 router and wraps /api/v1/* with AuthMiddleware.
@@ -78,7 +82,8 @@ func NewRouter(deps RouterDeps) (http.Handler, huma.API, error) {
 	api := humago.New(mux, cfg)
 
 	registerRoutes(api, deps)
-	return AuthMiddleware(deps.Auth, mux), api, nil
+	handler := governorPreemptionMiddleware(deps.Governor, mux)
+	return AuthMiddleware(deps.Auth, handler), api, nil
 }
 
 func callerFromCtx(ctx context.Context) (identity.AuthContext, error) {
@@ -313,14 +318,15 @@ type getSubgraphOutput struct {
 type systemStatusOutput struct {
 	Status int
 	Body   struct {
-		Status              string `json:"status"`
-		Version             string `json:"version"`
-		Database            string `json:"database"`
-		ActiveProfile       string `json:"active_profile,omitempty"`
-		L1GraphCacheEnabled bool   `json:"l1_graph_cache_enabled"`
-		L1NodesCount        int    `json:"l1_nodes_count"`
-		L1EdgesCount        int    `json:"l1_edges_count"`
-		L1EmbeddingsCount   int    `json:"l1_embeddings_count,omitempty"`
+		Status              string             `json:"status"`
+		Version             string             `json:"version"`
+		Database            string             `json:"database"`
+		ActiveProfile       string             `json:"active_profile,omitempty"`
+		L1GraphCacheEnabled bool               `json:"l1_graph_cache_enabled"`
+		L1NodesCount        int                `json:"l1_nodes_count"`
+		L1EdgesCount        int                `json:"l1_edges_count"`
+		L1EmbeddingsCount   int                `json:"l1_embeddings_count,omitempty"`
+		Governor            *governor.Snapshot `json:"governor,omitempty"`
 	}
 }
 
@@ -661,8 +667,15 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 			out.Body.L1EdgesCount = st.EdgesCount
 			out.Body.L1EmbeddingsCount = st.EmbeddingsCount
 		}
+		if deps.Governor != nil {
+			snap := deps.Governor.Status()
+			out.Body.ActiveProfile = string(snap.Profile)
+			out.Body.Governor = &snap
+		}
 		return out, nil
 	})
+
+	registerPhase03Routes(api, deps)
 }
 
 func toMutationOutput(res *capture.MutationResult) *mutationOutput {
