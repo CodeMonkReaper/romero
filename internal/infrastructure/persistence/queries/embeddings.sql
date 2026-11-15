@@ -1,4 +1,4 @@
--- name: UpsertMemoryEmbedding :exec
+-- name: UpsertMemoryEmbedding :execrows
 INSERT INTO memory_embeddings (
     memory_id,
     tenant_id,

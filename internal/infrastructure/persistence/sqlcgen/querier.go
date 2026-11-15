@@ -62,7 +62,7 @@ type Querier interface {
 	SearchMemoriesByVector(ctx context.Context, arg SearchMemoriesByVectorParams) ([]uuid.UUID, error)
 	TraverseCausalSubgraph(ctx context.Context, arg TraverseCausalSubgraphParams) ([]TraverseCausalSubgraphRow, error)
 	UpdateMemoryState(ctx context.Context, arg UpdateMemoryStateParams) (int64, error)
-	UpsertMemoryEmbedding(ctx context.Context, arg UpsertMemoryEmbeddingParams) error
+	UpsertMemoryEmbedding(ctx context.Context, arg UpsertMemoryEmbeddingParams) (int64, error)
 	UpsertTaskPermission(ctx context.Context, arg UpsertTaskPermissionParams) (TaskPermission, error)
 }
 

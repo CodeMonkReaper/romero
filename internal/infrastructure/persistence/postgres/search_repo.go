@@ -217,7 +217,15 @@ func (r *searchRepo) LoadProjectGraphSnapshot(ctx context.Context, tenantID uuid
 	}
 	projNull := toNullUUID(projectID)
 
-	memRows, err := r.q.LoadProjectGraphMemories(ctx, sqlcgen.LoadProjectGraphMemoriesParams{
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	committed := false
+	defer rollbackTx(&committed, tx)
+	txQ := r.q.WithTx(tx)
+
+	memRows, err := txQ.LoadProjectGraphMemories(ctx, sqlcgen.LoadProjectGraphMemoriesParams{
 		TenantID:  tenantID,
 		ProjectID: projNull,
 		Now:       now,
@@ -244,7 +252,7 @@ func (r *searchRepo) LoadProjectGraphSnapshot(ctx context.Context, tenantID uuid
 		mems = append(mems, *m)
 	}
 
-	relRows, err := r.q.LoadProjectGraphRelations(ctx, sqlcgen.LoadProjectGraphRelationsParams{
+	relRows, err := txQ.LoadProjectGraphRelations(ctx, sqlcgen.LoadProjectGraphRelationsParams{
 		TenantID:  tenantID,
 		ProjectID: projNull,
 		Now:       now,
@@ -273,13 +281,17 @@ func (r *searchRepo) LoadProjectGraphSnapshot(ctx context.Context, tenantID uuid
 		})
 	}
 
-	embRows, err := r.q.LoadProjectGraphEmbeddings(ctx, sqlcgen.LoadProjectGraphEmbeddingsParams{
+	embRows, err := txQ.LoadProjectGraphEmbeddings(ctx, sqlcgen.LoadProjectGraphEmbeddingsParams{
 		TenantID:  tenantID,
 		ProjectID: projNull,
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	committed = true
 	vecs := make(map[uuid.UUID][]float32, len(embRows))
 	for _, row := range embRows {
 		vec, parseErr := parseHalfVec(row.DenseVecText)

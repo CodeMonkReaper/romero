@@ -42,12 +42,19 @@ func (r *embeddingRepo) UpsertMemoryEmbedding(ctx context.Context, emb memory.Me
 		updatedAt = time.Now().UTC()
 	}
 
-	return r.q.UpsertMemoryEmbedding(ctx, sqlcgen.UpsertMemoryEmbeddingParams{
+	rows, err := r.q.UpsertMemoryEmbedding(ctx, sqlcgen.UpsertMemoryEmbeddingParams{
 		MemoryID:     emb.MemoryID,
 		ModelName:    modelName,
 		DenseVecText: vecText,
 		UpdatedAt:    updatedAt,
 	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return memory.ErrNotFound
+	}
+	return nil
 }
 
 func (r *embeddingRepo) GetMemoryEmbeddingsByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]float32, error) {

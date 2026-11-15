@@ -90,6 +90,12 @@ func TestRepositoryInputGuards(t *testing.T) {
 	if got, err := s.Search().SearchByFTS(ctx, memory.SearchFilter{TenantID: uuid.New(), Scopes: []identity.ScopeType{identity.ScopeProjectShared}, QueryText: "   "}); err != nil || len(got) != 0 {
 		t.Fatalf("expected empty slice for empty query, got len=%d err=%v", len(got), err)
 	}
+	if got, err := s.Search().SearchByVector(ctx, memory.SearchFilter{TenantID: uuid.New()}, make([]float32, 1024)); err != nil || len(got) != 0 {
+		t.Fatalf("expected empty slice for empty scopes in SearchByVector, got len=%d err=%v", len(got), err)
+	}
+	if _, err := s.Search().SearchByVector(ctx, memory.SearchFilter{TenantID: uuid.New(), Scopes: []identity.ScopeType{identity.ScopeProjectShared}}, []float32{1}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for bad vector dims, got %v", err)
+	}
 	if got, err := s.Search().TraverseCausalSubgraph(ctx, uuid.New(), nil, 2, time.Now()); err != nil || len(got) != 0 {
 		t.Fatalf("expected empty walk for empty seeds, got len=%d err=%v", len(got), err)
 	}

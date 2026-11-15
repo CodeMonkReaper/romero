@@ -5,13 +5,20 @@
 | Task | Issue | Status | Depends-on | Trace | Risk |
 | --- | --- | --- | --- | --- | --- |
 | `T001` | [#27](https://github.com/CodeMonkReaper/romero/issues/27) | `verified` | — | `AC-01`..`AC-05`, `AC-07`, `AC-09`..`AC-11` | `1` |
-| `T002` | [#28](https://github.com/CodeMonkReaper/romero/issues/28) | `ready-for-agent` | — | `AC-01`..`AC-03`, `AC-05`, `AC-08`..`AC-12` | `1` |
+| `T002` | [#28](https://github.com/CodeMonkReaper/romero/issues/28) | `verified` | — | `AC-01`..`AC-03`, `AC-05`, `AC-08`..`AC-12` | `1` |
 | `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
 | `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `ready-for-agent` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T002 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/28
+- branch: `feat/t002-phase02-sqlc-postgres` (base `5c82043`)
+- controls (`go1.27.3` + `sqlc v1.31.1`): `sqlc generate` PASS (zero errors), `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, unit tests `TestFormatAndParseHalfVec` & `TestRepositoryInputGuards` PASS. (Live PostgreSQL 17 integration suite in `postgres/` + `-race` + `golangci-lint` deferred until Docker daemon / `T007`–`T008` live DB run).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`6f9e7ad2`): `3 findings: 0 blockers, 3 nits` (`VERDICT: pass`) — `UpsertMemoryEmbedding` `:execrows` `ErrNotFound` check, `LoadProjectGraphSnapshot` `REPEATABLE READ` `READ ONLY` transaction, and `SearchByVector` guard test fixed and re-verified.
+- traceability: `AC-01`, `AC-02`, `AC-03`, `AC-05`, `AC-08`, `AC-09`, `AC-10`, `AC-11`, `AC-12`.
 
 ## T001 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/27

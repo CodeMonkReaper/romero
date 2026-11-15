@@ -51,7 +51,7 @@ func (q *Queries) GetMemoryEmbeddingsByIDs(ctx context.Context, arg GetMemoryEmb
 	return items, nil
 }
 
-const upsertMemoryEmbedding = `-- name: UpsertMemoryEmbedding :exec
+const upsertMemoryEmbedding = `-- name: UpsertMemoryEmbedding :execrows
 INSERT INTO memory_embeddings (
     memory_id,
     tenant_id,
@@ -88,12 +88,15 @@ type UpsertMemoryEmbeddingParams struct {
 	MemoryID     uuid.UUID `json:"memory_id"`
 }
 
-func (q *Queries) UpsertMemoryEmbedding(ctx context.Context, arg UpsertMemoryEmbeddingParams) error {
-	_, err := q.db.Exec(ctx, upsertMemoryEmbedding,
+func (q *Queries) UpsertMemoryEmbedding(ctx context.Context, arg UpsertMemoryEmbeddingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertMemoryEmbedding,
 		arg.ModelName,
 		arg.DenseVecText,
 		arg.UpdatedAt,
 		arg.MemoryID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
