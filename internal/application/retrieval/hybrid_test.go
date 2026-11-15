@@ -365,3 +365,84 @@ func TestRetrievalService_ValidationScopeAuthTaskAccessAndPureRead(t *testing.T)
 		t.Fatalf("expected ErrForbidden when task_shared CanRead=false, got %v", err)
 	}
 }
+
+func TestSearchMemories_FiltersByMemoryTypesAndMinConfidence(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	agentID := uuid.New()
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+
+	mProcHigh := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID,
+		Type: memory.TypeProcedural, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		Summary: "proc high", Content: "secret proc high", EpistemicStatus: memory.EpistemicObserved,
+		Confidence: 0.90, AlphaScore: 9, BetaScore: 1, Version: 1,
+		Clocks: memory.TriTemporalWindow{ObservedAt: now, CreatedAt: now, ValidFrom: now},
+	}
+	mProcLow := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID,
+		Type: memory.TypeProcedural, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		Summary: "proc low", Content: "secret proc low", EpistemicStatus: memory.EpistemicInferred,
+		Confidence: 0.45, AlphaScore: 4.5, BetaScore: 5.5, Version: 1,
+		Clocks: memory.TriTemporalWindow{ObservedAt: now, CreatedAt: now, ValidFrom: now},
+	}
+	mSemHigh := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID,
+		Type: memory.TypeSemantic, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		Summary: "sem high", Content: "secret sem high", EpistemicStatus: memory.EpistemicObserved,
+		Confidence: 0.95, AlphaScore: 19, BetaScore: 1, Version: 1,
+		Clocks: memory.TriTemporalWindow{ObservedAt: now, CreatedAt: now, ValidFrom: now},
+	}
+
+	uow := newFakeRetrievalStore()
+	uow.memories[mProcHigh.ID] = mProcHigh
+	uow.memories[mProcLow.ID] = mProcLow
+	uow.memories[mSemHigh.ID] = mSemHigh
+
+	repo := &fakeHybridSearchRepo{
+		trgmIDs:  []uuid.UUID{mProcHigh.ID, mProcLow.ID, mSemHigh.ID},
+		ftsIDs:   []uuid.UUID{mProcHigh.ID, mProcLow.ID, mSemHigh.ID},
+		memories: uow.memories,
+	}
+	sub := graph.AuthorizedSubgraph{
+		Nodes: map[uuid.UUID]graph.AuthorizedNode{
+			mProcHigh.ID: {ID: mProcHigh.ID, Status: mProcHigh.Status},
+			mProcLow.ID:  {ID: mProcLow.ID, Status: mProcLow.Status},
+			mSemHigh.ID:  {ID: mSemHigh.ID, Status: mSemHigh.Status},
+		},
+	}
+
+	svc, _ := retrieval.NewService(uow, uow, fakeRetrievalTaskAccess{canRead: true}, nil, func() time.Time { return now })
+	svc.SetHybridDeps(repo, nil, fakeGraphProjector{sub: sub, mems: uow.memories})
+
+	auth := identity.AuthContext{
+		TenantID:        tenantID,
+		PrincipalID:     uuid.New(),
+		AgentID:         &agentID,
+		PrincipalType:   identity.PrincipalAgent,
+		AllowedProjects: []uuid.UUID{projectID},
+		AllowedScopes:   []identity.ScopeType{identity.ScopeProjectShared},
+	}
+
+	minConf := float32(0.80)
+	res, err := svc.SearchMemories(context.Background(), auth, retrieval.SearchQuery{
+		Query:         "proc",
+		MemoryTypes:   []memory.MemoryType{memory.TypeProcedural},
+		MinConfidence: &minConf,
+	})
+	if err != nil {
+		t.Fatalf("SearchMemories: %v", err)
+	}
+	if len(res.Candidates) != 1 || res.Candidates[0].ID != mProcHigh.ID {
+		t.Fatalf("expected only mProcHigh (%s), got %+v", mProcHigh.ID, res.Candidates)
+	}
+
+	badConf := float32(1.5)
+	if _, err := svc.SearchMemories(context.Background(), auth, retrieval.SearchQuery{
+		Query:         "proc",
+		MinConfidence: &badConf,
+	}); !errors.Is(err, retrieval.ErrValidation) {
+		t.Fatalf("expected ErrValidation for min_confidence > 1, got %v", err)
+	}
+}

@@ -408,8 +408,11 @@ func TestREST_Phase02HybridContextSubgraphAndRelations(t *testing.T) {
 		t.Fatalf("expected 201 capture with relations, got %d (%s)", rec.Code, rec.Body.String())
 	}
 
-	// POST /memories/search -> 200
-	if rec := doReq(http.MethodPost, "/api/v1/memories/search", map[string]any{"query": "jwt", "limit": 5, "hops": 2}); rec.Code != http.StatusOK {
+	// POST /memories/search -> 200 (with memory_types and min_confidence)
+	if rec := doReq(http.MethodPost, "/api/v1/memories/search", map[string]any{
+		"query": "jwt", "limit": 5, "hops": 2,
+		"memory_types": []string{"procedural"}, "min_confidence": 0.75,
+	}); rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 search, got %d (%s)", rec.Code, rec.Body.String())
 	}
 

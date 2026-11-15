@@ -54,6 +54,8 @@ type SearchQuery struct {
 	ProjectIDs          []uuid.UUID
 	Scopes              []identity.ScopeType
 	TaskID              string
+	MemoryTypes         []memory.MemoryType
+	MinConfidence       *float32
 	Limit               int
 	Hops                int
 	IncludeSuperseded   bool
@@ -498,6 +500,7 @@ func (s *Service) executeHybridSearch(
 		degradedMode = true
 	}
 	ranked := memory.RankCandidates(inputs, now, q.IncludeSuperseded, q.IncludeConsolidated)
+	ranked = filterRankedCandidates(ranked, q.MemoryTypes, q.MinConfidence)
 
 	if auditOp != "" {
 		if err := s.audit.RecordAllowed(ctx, memory.AuditEvent{
@@ -566,7 +569,34 @@ func validateSearchQuery(q SearchQuery) error {
 	if q.Hops < 0 || q.Hops > maxSearchHops {
 		return fmt.Errorf("%w: hops must be within [0, %d]", ErrValidation, maxSearchHops)
 	}
+	for _, mt := range q.MemoryTypes {
+		switch mt {
+		case memory.TypeEpisodic, memory.TypeSemantic, memory.TypeProcedural, memory.TypeRelational:
+		default:
+			return fmt.Errorf("%w: invalid memory_type %q", ErrValidation, mt)
+		}
+	}
+	if q.MinConfidence != nil && (*q.MinConfidence < 0 || *q.MinConfidence > 1) {
+		return fmt.Errorf("%w: min_confidence must be within [0, 1]", ErrValidation)
+	}
 	return nil
+}
+
+func filterRankedCandidates(ranked []memory.ScoredCandidate, types []memory.MemoryType, minConf *float32) []memory.ScoredCandidate {
+	if len(types) == 0 && minConf == nil {
+		return ranked
+	}
+	out := make([]memory.ScoredCandidate, 0, len(ranked))
+	for _, c := range ranked {
+		if len(types) > 0 && !slices.Contains(types, c.Memory.Type) {
+			continue
+		}
+		if minConf != nil && c.Memory.Confidence < *minConf {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func (s *Service) authorizeSearchScope(

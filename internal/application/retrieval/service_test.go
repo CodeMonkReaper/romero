@@ -394,3 +394,89 @@ func TestRetrievalService_CoverageEdges(t *testing.T) {
 		t.Fatalf("expected ErrOperational when RecordAllowed fails in GetRequestStatus, got %v", err)
 	}
 }
+
+func TestGetMemory_FiltersInvisibleRelations_CurrentAndPointInTime(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	callerAgent := uuid.New()
+	otherAgent := uuid.New()
+	sourceID := uuid.New()
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+
+	m1 := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID,
+		Type: memory.TypeSemantic, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		Summary: "shared node", Content: "shared body", EpistemicStatus: memory.EpistemicObserved,
+		Confidence: 0.9, PrimarySourceID: sourceID, Version: 2,
+	}
+	m2 := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID,
+		Type: memory.TypeSemantic, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		Summary: "visible peer", Content: "visible peer body", EpistemicStatus: memory.EpistemicObserved,
+		Confidence: 0.85, PrimarySourceID: sourceID, Version: 1,
+	}
+	m3 := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projectID, OwnerAgentID: &otherAgent,
+		Type: memory.TypeSemantic, ScopeType: identity.ScopeAgentPrivate, Status: memory.StatusActive,
+		Summary: "private other agent", Content: "secret body", EpistemicStatus: memory.EpistemicObserved,
+		Confidence: 0.95, PrimarySourceID: sourceID, Version: 1,
+	}
+
+	store := newFakeRetrievalStore()
+	store.memories[m1.ID] = m1
+	store.memories[m2.ID] = m2
+	store.memories[m3.ID] = m3
+	store.versions[m1.ID] = []memory.MemoryVersion{
+		{ID: uuid.New(), MemoryID: m1.ID, Version: 1, Summary: "v1", Content: "v1 body", EpistemicStatus: memory.EpistemicReported, AlphaScore: 3, BetaScore: 1, Status: memory.StatusActive, ValidFrom: now.Add(-2 * time.Hour), CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: uuid.New(), MemoryID: m1.ID, Version: 2, Summary: "v2", Content: "v2 body", EpistemicStatus: memory.EpistemicObserved, AlphaScore: 9, BetaScore: 1, Status: memory.StatusActive, ValidFrom: now.Add(-10 * time.Minute), CreatedAt: now.Add(-10 * time.Minute)},
+	}
+	relVisible := memory.MemoryRelation{
+		ID: uuid.New(), TenantID: tenantID, FromMemoryID: m1.ID, ToMemoryID: m2.ID,
+		RelationType: memory.RelationSupports, Weight: 0.9, IsActive: true,
+	}
+	relHidden := memory.MemoryRelation{
+		ID: uuid.New(), TenantID: tenantID, FromMemoryID: m1.ID, ToMemoryID: m3.ID,
+		RelationType: memory.RelationDependsOn, Weight: 0.8, IsActive: true,
+	}
+	store.relations[m1.ID] = []memory.MemoryRelation{relVisible, relHidden}
+
+	svc, err := retrieval.NewService(store, store, fakeTaskAccess{snap: retrieval.TaskAccessSnapshot{CanRead: false}}, nil, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	auth := identity.AuthContext{
+		TenantID:        tenantID,
+		PrincipalID:     uuid.New(),
+		AgentID:         &callerAgent,
+		PrincipalType:   identity.PrincipalAgent,
+		AllowedProjects: []uuid.UUID{projectID},
+		AllowedScopes:   []identity.ScopeType{identity.ScopeAgentPrivate, identity.ScopeProjectShared},
+	}
+
+	// Current mode: only relVisible is returned; relHidden (pointing to otherAgent's private memory) is omitted.
+	cur, err := svc.GetMemory(context.Background(), auth, retrieval.GetMemoryQuery{MemoryID: m1.ID})
+	if err != nil {
+		t.Fatalf("GetMemory current: %v", err)
+	}
+	if len(cur.Relations) != 1 || cur.Relations[0].ID != relVisible.ID {
+		t.Fatalf("expected only 1 visible relation (%s), got %+v", relVisible.ID, cur.Relations)
+	}
+	if len(cur.Versions) != 2 {
+		t.Fatalf("expected 2 versions in current mode, got %d", len(cur.Versions))
+	}
+
+	// Point-in-Time mode: Versions filtered to CreatedAt <= asOf, and Relations still filtered to visible endpoints.
+	asOf := now.Add(-1 * time.Hour)
+	pit, err := svc.GetMemory(context.Background(), auth, retrieval.GetMemoryQuery{MemoryID: m1.ID, AsOf: &asOf})
+	if err != nil {
+		t.Fatalf("GetMemory Point-in-Time: %v", err)
+	}
+	if len(pit.Versions) != 1 || pit.Versions[0].Version != 1 {
+		t.Fatalf("expected 1 version <= asOf (v1), got %+v", pit.Versions)
+	}
+	if len(pit.Relations) != 1 || pit.Relations[0].ID != relVisible.ID {
+		t.Fatalf("expected only 1 visible relation (%s) in Point-in-Time mode, got %+v", relVisible.ID, pit.Relations)
+	}
+}
