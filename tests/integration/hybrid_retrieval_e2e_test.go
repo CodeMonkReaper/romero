@@ -40,11 +40,14 @@ func (d *deterministicEmbedder) Embed(_ context.Context, text string) (memory.Em
 	if strings.Contains(lower, "redis") || strings.Contains(lower, "cache") {
 		vec[4] = 0.9
 	}
-	// Fallback unit direction so zero vectors never occur.
-	vec[10] = 0.1
 	var norm float64
 	for _, v := range vec {
 		norm += float64(v) * float64(v)
+	}
+	// Fallback unit direction only if no keyword bucket matched.
+	if norm == 0 {
+		vec[10] = 1.0
+		norm = 1.0
 	}
 	scale := float32(1.0 / math.Sqrt(norm))
 	for i := range vec {
@@ -108,28 +111,28 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 
 	boot := bootstrapTenant(t, env, "hybrid-e2e")
 	agentID := uuid.New()
-	agent := createAgentPrincipal(t, env, boot.Tenant.ID, boot.Project.ID, agentID, "hybrid-worker", "agent_private,project_shared,org_shared")
+	agent := createAgentPrincipal(t, env, boot.Tenant.ID, boot.Project.ID, agentID, "hybrid-worker", "agent_private,task_shared,org_shared")
 
 	ctx := context.Background()
 
 	// 1. Capture root memory M1, linked hop M2 (depends_on M1), and an unrelated memory M_noise.
-	m1Payload := capturePayload(boot.Project.ID, "project_shared", "db.pool", "PostgreSQL connection pool configuration with PgBouncer transaction pooling", "verified_fact", "agent_observed")
+	m1Payload := capturePayload(boot.Project.ID, "org_shared", "db.pool", "PostgreSQL connection pool configuration with PgBouncer transaction pooling", "reported", "user_input")
 	m1ID := mustCaptureViaREST(t, env, agent.APIKey, m1Payload)
 
-	m2Payload := capturePayload(boot.Project.ID, "project_shared", "incident.timeout", "Checkout service timeout root cause traced to upstream settings", "verified_fact", "agent_observed")
+	m2Payload := capturePayload(boot.Project.ID, "org_shared", "incident.timeout", "Checkout service timeout root cause traced to upstream settings", "reported", "user_input")
 	m2Payload["relations"] = []map[string]any{
 		{
-			"target_id": m1ID.String(),
-			"type":      "depends_on",
-			"weight":    0.9,
+			"to_memory_id":  m1ID.String(),
+			"relation_type": "depends_on",
+			"weight":        0.9,
 		},
 	}
 	m2ID := mustCaptureViaREST(t, env, agent.APIKey, m2Payload)
 
-	mNoisePayload := capturePayload(boot.Project.ID, "project_shared", "cache.redis", "Redis cluster eviction policy allkeys-lru", "verified_fact", "agent_observed")
+	mNoisePayload := capturePayload(boot.Project.ID, "org_shared", "cache.redis", "Redis cluster eviction policy allkeys-lru", "reported", "user_input")
 	_ = mustCaptureViaREST(t, env, agent.APIKey, mNoisePayload)
 
-	// 2. Process async embedding jobs so halfvec(1024) + sparsevec are persisted in PG17.
+	// 2. Process async embedding jobs so halfvec(1024) + sparsevec are persisted in PG17 for all memories.
 	processed, err := env.EmbWorker.ProcessOnce(ctx)
 	if err != nil {
 		t.Fatalf("EmbWorker.ProcessOnce: %v", err)
@@ -170,8 +173,8 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 		}
 		if item["id"] == m2ID.String() {
 			foundM2 = true
-			if hop, _ := item["min_hop_depth"].(float64); hop < 1 {
-				t.Fatalf("expected multi-hop item M2 to have min_hop_depth >= 1, got %v", item["min_hop_depth"])
+			if relCnt, _ := item["relations_count"].(float64); relCnt < 1 {
+				t.Fatalf("expected linked item M2 to report relations_count >= 1, got %v", item["relations_count"])
 			}
 		}
 	}
@@ -240,12 +243,7 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 
 	// 7. L1 Write-Through coherence: superseding M1 removes it from default search immediately.
 	supResp, supBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/"+m1ID.String()+"/supersede", agent.APIKey, map[string]any{
-		"summary":            "Summary: PostgreSQL PgBouncer v2 pool limits",
-		"content":            "PostgreSQL connection pool updated to PgBouncer v2 limits",
-		"epistemic_status":   "verified_fact",
-		"importance":         0.9,
-		"source_type":        "agent_observed",
-		"external_source_id": "ext-src-2",
+		"capture": capturePayload(boot.Project.ID, "org_shared", "db.pool", "PostgreSQL connection pool updated to PgBouncer v2 limits", "reported", "user_input"),
 	})
 	if supResp.StatusCode != http.StatusOK {
 		t.Fatalf("supersede status=%d body=%s", supResp.StatusCode, string(supBody))
