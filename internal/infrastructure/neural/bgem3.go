@@ -22,8 +22,8 @@ const (
 	defaultBGEM3Timeout    = 2 * time.Second
 )
 
-// ErrProviderUnavailable indicates the local embedding daemon is disabled, unreachable, or timed out.
-var ErrProviderUnavailable = errors.New("embedding provider unavailable")
+// ErrProviderUnavailable indicates the local neural daemon is disabled, unreachable, or timed out.
+var ErrProviderUnavailable = memory.ErrProviderUnavailable
 
 // BGEM3Config configures the persistent HTTP client for BGE-M3 embeddings.
 type BGEM3Config struct {
@@ -57,21 +57,12 @@ func NewBGEM3Client(cfg BGEM3Config) *BGEM3Client {
 	if timeout <= 0 {
 		timeout = defaultBGEM3Timeout
 	}
-	transport := &http.Transport{
-		MaxIdleConns:        32,
-		MaxIdleConnsPerHost: 16,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-	}
 	return &BGEM3Client{
 		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
 		modelName:  modelName,
 		dimensions: dims,
 		enabled:    cfg.Enabled,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
+		httpClient: newNeuralHTTPClient(timeout, 32, 16),
 	}
 }
 

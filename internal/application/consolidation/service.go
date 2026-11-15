@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrForbidden    = errors.New("forbidden")
-	ErrOperational  = errors.New("operational consolidation error")
+	ErrUnauthorized      = errors.New("unauthorized")
+	ErrForbidden         = errors.New("forbidden")
+	ErrEngineUnavailable = errors.New("consolidation engine unavailable")
+	ErrOperational       = errors.New("operational consolidation error")
 )
 
 // ConsolidateCommand configures a REM sleep consolidation run.
@@ -111,6 +112,9 @@ func (s *Service) Consolidate(ctx context.Context, auth identity.AuthContext, cm
 			return nil, ErrForbidden
 		}
 	}
+	if !cmd.DryRun && (s.slm == nil || s.nli == nil) {
+		return nil, ErrEngineUnavailable
+	}
 
 	res := &ConsolidateResult{}
 	runFn := func(remCtx context.Context) error {
@@ -176,6 +180,9 @@ func (s *Service) runConsolidate(
 			return remCtx.Err()
 		}
 		if err != nil {
+			if errors.Is(err, memory.ErrProviderUnavailable) {
+				return fmt.Errorf("%w: %v", ErrEngineUnavailable, err)
+			}
 			continue
 		}
 
@@ -184,18 +191,18 @@ func (s *Service) runConsolidate(
 			continue
 		}
 
-		allPairs := make([]memory.NLIPairInput, 0, len(cluster.Episodes)+len(verifiedMems))
+		relevantVerified := memory.FilterVerifiedForScope(verifiedMems, cluster.ScopeTarget)
+		allPairs := make([]memory.NLIPairInput, 0, len(cluster.Episodes)+len(relevantVerified))
 		for _, ep := range cluster.Episodes {
 			allPairs = append(allPairs, memory.NLIPairInput{
-				Premise:    strings.TrimSpace(ep.Summary + "\n" + ep.Content),
-				Hypothesis: draftText,
+				Premise:    draftText,
+				Hypothesis: strings.TrimSpace(ep.Summary + "\n" + ep.Content),
 			})
 		}
-		relevantVerified := filterVerifiedForCluster(verifiedMems, cluster.ScopeTarget)
 		for _, v := range relevantVerified {
 			allPairs = append(allPairs, memory.NLIPairInput{
-				Premise:    strings.TrimSpace(v.Summary + "\n" + v.Content),
-				Hypothesis: draftText,
+				Premise:    draftText,
+				Hypothesis: strings.TrimSpace(v.Summary + "\n" + v.Content),
 			})
 		}
 
@@ -204,7 +211,13 @@ func (s *Service) runConsolidate(
 			res.Preempted = true
 			return remCtx.Err()
 		}
-		if err != nil || len(scores) != len(allPairs) {
+		if err != nil {
+			if errors.Is(err, memory.ErrProviderUnavailable) {
+				return fmt.Errorf("%w: %v", ErrEngineUnavailable, err)
+			}
+			continue
+		}
+		if len(scores) != len(allPairs) {
 			continue
 		}
 
@@ -332,7 +345,7 @@ func (s *Service) commitClusterTx(
 		if err := reg.Memories().InsertMemory(ctx, newMem); err != nil {
 			return err
 		}
-		if err := reg.Memories().InsertMemoryVersion(ctx, buildConsolidationVersion(newMem, "rem_consolidation", now)); err != nil {
+		if err := reg.Memories().InsertMemoryVersion(ctx, memory.NewVersionFromMemory(newMem, "rem_consolidation", now)); err != nil {
 			return err
 		}
 
@@ -364,7 +377,7 @@ func (s *Service) commitClusterTx(
 			if err := reg.Memories().UpdateMemoryState(ctx, ep); err != nil {
 				return err
 			}
-			if err := reg.Memories().InsertMemoryVersion(ctx, buildConsolidationVersion(ep, "rem_consolidated", now)); err != nil {
+			if err := reg.Memories().InsertMemoryVersion(ctx, memory.NewVersionFromMemory(ep, "rem_consolidated", now)); err != nil {
 				return err
 			}
 			consolidatedEps = append(consolidatedEps, ep)
@@ -416,54 +429,4 @@ func (s *Service) recordDenied(ctx context.Context, auth identity.AuthContext, c
 		Details:       map[string]any{"reason": reason},
 		CreatedAt:     now,
 	})
-}
-
-func filterVerifiedForCluster(verified []memory.Memory, target identity.MemoryScopeTarget) []memory.Memory {
-	out := make([]memory.Memory, 0, len(verified))
-	for _, v := range verified {
-		if v.TenantID != target.TenantID {
-			continue
-		}
-		if v.ProjectID != nil && target.ProjectID != nil && *v.ProjectID != *target.ProjectID {
-			continue
-		}
-		if v.ScopeType == identity.ScopeAgentPrivate || v.ScopeType == identity.ScopeTaskShared {
-			vTarget := identity.MemoryScopeTarget{
-				TenantID:     v.TenantID,
-				ProjectID:    v.ProjectID,
-				OwnerAgentID: v.OwnerAgentID,
-				ScopeType:    v.ScopeType,
-				TaskID:       v.TaskID,
-			}
-			if !vTarget.SameTopicPartition(target) {
-				continue
-			}
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
-func buildConsolidationVersion(m memory.Memory, reason string, now time.Time) memory.MemoryVersion {
-	return memory.MemoryVersion{
-		ID:              uuid.New(),
-		MemoryID:        m.ID,
-		Version:         m.Version,
-		Summary:         m.Summary,
-		Content:         m.Content,
-		Tags:            append([]string(nil), m.Tags...),
-		Entities:        append([]string(nil), m.Entities...),
-		Metadata:        m.Metadata,
-		EpistemicStatus: m.EpistemicStatus,
-		AlphaScore:      m.AlphaScore,
-		BetaScore:       m.BetaScore,
-		Importance:      m.Importance,
-		UtilityScore:    m.UtilityScore,
-		Status:          m.Status,
-		ValidFrom:       m.Clocks.ValidFrom,
-		ValidUntil:      m.Clocks.ValidUntil,
-		ChangedBySource: &m.PrimarySourceID,
-		ChangeReason:    reason,
-		CreatedAt:       now,
-	}
 }

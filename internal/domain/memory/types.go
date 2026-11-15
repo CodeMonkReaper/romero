@@ -106,6 +106,7 @@ var (
 	ErrValidation                   = errors.New("validation error")
 	ErrForbidden                    = errors.New("forbidden")
 	ErrNotFound                     = errors.New("not found")
+	ErrProviderUnavailable          = errors.New("provider unavailable")
 )
 
 func (m MemoryType) Valid() bool {

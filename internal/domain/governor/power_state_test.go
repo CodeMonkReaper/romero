@@ -100,3 +100,47 @@ func TestPowerGovernorBurstAndAvailability(t *testing.T) {
 		t.Fatalf("expected return to guard after REM completion, got %s", gov.Status().State)
 	}
 }
+
+func TestPowerGovernor_CanAutoEnterREM(t *testing.T) {
+	burst := 50 * time.Millisecond
+	gov := NewPowerGovernor(Config{
+		Profile:      ProfileBalanced,
+		BurstWindow:  burst,
+		SLMAvailable: false,
+		NLIAvailable: true,
+	})
+	base := gov.Status().LastActivityAt
+
+	// Missing SLM -> cannot enter auto REM even after burstWindow.
+	if gov.CanAutoEnterREM(base.Add(burst + time.Second)) {
+		t.Fatalf("expected CanAutoEnterREM=false when SLM unavailable")
+	}
+
+	gov.SetProviderAvailability(false, true, true)
+	// Before burstWindow elapses -> false.
+	if gov.CanAutoEnterREM(base.Add(burst / 2)) {
+		t.Fatalf("expected CanAutoEnterREM=false before burstWindow elapses")
+	}
+	// After burstWindow elapses and idle -> true.
+	if !gov.CanAutoEnterREM(base.Add(burst)) {
+		t.Fatalf("expected CanAutoEnterREM=true once idle >= burstWindow with SLM+NLI available")
+	}
+
+	// In-flight request blocks auto REM.
+	done := gov.BeginAgentRequest()
+	if gov.CanAutoEnterREM(time.Now().UTC().Add(time.Hour)) {
+		t.Fatalf("expected CanAutoEnterREM=false while request in flight")
+	}
+	done()
+
+	// Active REM sleep blocks re-entering auto REM.
+	entered := make(chan struct{})
+	_ = gov.RunInREMSleep(context.Background(), func(context.Context) error {
+		close(entered)
+		if gov.CanAutoEnterREM(time.Now().UTC().Add(time.Hour)) {
+			t.Fatalf("expected CanAutoEnterREM=false while already in rem_sleep")
+		}
+		return nil
+	})
+	<-entered
+}

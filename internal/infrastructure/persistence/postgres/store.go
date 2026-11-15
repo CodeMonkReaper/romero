@@ -112,6 +112,25 @@ func (s *Store) Provisioning() *ProvisioningStore {
 	}
 }
 
+// REMTarget identifies an active tenant and an active principal for scheduled background consolidation.
+type REMTarget struct {
+	TenantID    uuid.UUID
+	PrincipalID uuid.UUID
+}
+
+// ListActiveREMTargets returns one active principal per active tenant for idle REM consolidation.
+func (s *Store) ListActiveREMTargets(ctx context.Context) ([]REMTarget, error) {
+	rows, err := s.queries.ListActiveREMTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]REMTarget, len(rows))
+	for i, r := range rows {
+		out[i] = REMTarget{TenantID: r.TenantID, PrincipalID: r.PrincipalID}
+	}
+	return out, nil
+}
+
 // OpaqueRequests returns the durable opaque request queue with leaseDuration (defaults to 60s if <= 0).
 func (s *Store) OpaqueRequests(leaseDuration time.Duration) *OpaqueRequestStore {
 	if leaseDuration <= 0 {

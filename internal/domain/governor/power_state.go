@@ -199,3 +199,17 @@ func (g *PowerGovernor) SetProviderAvailability(reranker, nli, slm bool) {
 	g.nliAvailable = nli
 	g.slmAvailable = slm
 }
+
+// CanAutoEnterREM reports whether the governor has been idle for at least burstWindow
+// with zero in-flight agent requests and both SLM and NLI available for background consolidation.
+func (g *PowerGovernor) CanAutoEnterREM(now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.inFlight > 0 || g.state == StateREMSleep {
+		return false
+	}
+	if !g.slmAvailable || !g.nliAvailable {
+		return false
+	}
+	return now.Sub(g.lastActivityAt) >= g.burstWindow
+}

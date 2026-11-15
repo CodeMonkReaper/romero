@@ -357,6 +357,36 @@ func validUUIDPtr(id *uuid.UUID) bool {
 	return id != nil && *id != uuid.Nil
 }
 
+// NewVersionFromMemory builds an immutable MemoryVersion snapshot from m for state transitions.
+func NewVersionFromMemory(m Memory, reason string, createdAt time.Time) MemoryVersion {
+	var changedBy *uuid.UUID
+	if m.PrimarySourceID != uuid.Nil {
+		src := m.PrimarySourceID
+		changedBy = &src
+	}
+	return MemoryVersion{
+		ID:              uuid.New(),
+		MemoryID:        m.ID,
+		Version:         m.Version,
+		Summary:         m.Summary,
+		Content:         m.Content,
+		Tags:            append([]string(nil), m.Tags...),
+		Entities:        append([]string(nil), m.Entities...),
+		Metadata:        m.Metadata,
+		EpistemicStatus: m.EpistemicStatus,
+		AlphaScore:      m.AlphaScore,
+		BetaScore:       m.BetaScore,
+		Importance:      m.Importance,
+		UtilityScore:    m.UtilityScore,
+		Status:          m.Status,
+		ValidFrom:       m.Clocks.ValidFrom,
+		ValidUntil:      m.Clocks.ValidUntil,
+		ChangedBySource: changedBy,
+		ChangeReason:    reason,
+		CreatedAt:       createdAt,
+	}
+}
+
 func isLowerHexSHA256(s string) bool {
 	if len(s) != 64 {
 		return false

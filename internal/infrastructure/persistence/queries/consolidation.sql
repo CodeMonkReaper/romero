@@ -87,3 +87,17 @@ WHERE tenant_id = @tenant_id
   AND valid_from <= @now
   AND (valid_until IS NULL OR valid_until > @now)
 ORDER BY observed_at DESC, id ASC;
+
+-- name: ListActiveREMTargets :many
+SELECT DISTINCT ON (t.id)
+    t.id AS tenant_id,
+    p.id AS principal_id
+FROM tenants t
+JOIN principals p ON p.tenant_id = t.id
+WHERE t.is_active = TRUE
+  AND p.is_active = TRUE
+  AND (p.expires_at IS NULL OR p.expires_at > NOW())
+ORDER BY t.id,
+         CASE WHEN p.principal_type IN ('user', 'service') THEN 0 ELSE 1 END,
+         p.created_at ASC,
+         p.id ASC;

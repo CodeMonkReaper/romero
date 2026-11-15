@@ -407,6 +407,11 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		defer close(embDone)
 		embWorker.Run(workerCtx)
 	}()
+	remDone := make(chan struct{})
+	go func() {
+		defer close(remDone)
+		runIdleREMScheduler(workerCtx, gov, store, consSvc, defaultIdleREMTickInterval)
+	}()
 
 	srv := &http.Server{
 		Addr:              listenAddr,
@@ -427,6 +432,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		cancelWorker()
 		<-workerDone
 		<-embDone
+		<-remDone
 		return sErr
 	case <-ctx.Done():
 		shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
@@ -435,7 +441,79 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		cancelWorker()
 		<-workerDone
 		<-embDone
+		<-remDone
 		return nil
+	}
+}
+
+const defaultIdleREMTickInterval = 5 * time.Second
+
+type remTargetLister interface {
+	ListActiveREMTargets(ctx context.Context) ([]postgres.REMTarget, error)
+}
+
+type remConsolidator interface {
+	Consolidate(ctx context.Context, auth identity.AuthContext, cmd consolidation.ConsolidateCommand) (*consolidation.ConsolidateResult, error)
+}
+
+func runIdleREMScheduler(
+	ctx context.Context,
+	gov *governor.PowerGovernor,
+	lister remTargetLister,
+	cons remConsolidator,
+	interval time.Duration,
+) {
+	if gov == nil || lister == nil || cons == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = defaultIdleREMTickInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	nowUTC := func() time.Time { return time.Now().UTC() }
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runIdleREMTick(ctx, gov, lister, cons, nowUTC)
+		}
+	}
+}
+
+func runIdleREMTick(
+	ctx context.Context,
+	gov *governor.PowerGovernor,
+	lister remTargetLister,
+	cons remConsolidator,
+	nowFn func() time.Time,
+) {
+	if ctx.Err() != nil || gov == nil || lister == nil || cons == nil {
+		return
+	}
+	if nowFn == nil {
+		nowFn = func() time.Time { return time.Now().UTC() }
+	}
+	if !gov.CanAutoEnterREM(nowFn()) {
+		return
+	}
+	targets, err := lister.ListActiveREMTargets(ctx)
+	if err != nil || len(targets) == 0 {
+		return
+	}
+	for _, target := range targets {
+		if ctx.Err() != nil || !gov.CanAutoEnterREM(nowFn()) {
+			return
+		}
+		_, _ = cons.Consolidate(ctx, identity.AuthContext{
+			TenantID:      target.TenantID,
+			PrincipalID:   target.PrincipalID,
+			PrincipalType: identity.PrincipalService,
+			IsAdmin:       true,
+		}, consolidation.ConsolidateCommand{
+			CorrelationID: "rem-scheduler",
+		})
 	}
 }
 

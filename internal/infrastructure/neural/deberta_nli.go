@@ -44,20 +44,11 @@ func NewDeBERTaNLIClient(cfg NLIConfig) *DeBERTaNLIClient {
 	if timeout <= 0 {
 		timeout = defaultNLITimeout
 	}
-	transport := &http.Transport{
-		MaxIdleConns:        32,
-		MaxIdleConnsPerHost: 16,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-	}
 	return &DeBERTaNLIClient{
-		baseURL:   strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		modelName: modelName,
-		enabled:   cfg.Enabled,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
+		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		modelName:  modelName,
+		enabled:    cfg.Enabled,
+		httpClient: newNeuralHTTPClient(timeout, 32, 16),
 	}
 }
 

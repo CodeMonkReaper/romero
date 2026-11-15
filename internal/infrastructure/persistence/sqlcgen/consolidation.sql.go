@@ -13,6 +13,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listActiveREMTargets = `-- name: ListActiveREMTargets :many
+SELECT DISTINCT ON (t.id)
+    t.id AS tenant_id,
+    p.id AS principal_id
+FROM tenants t
+JOIN principals p ON p.tenant_id = t.id
+WHERE t.is_active = TRUE
+  AND p.is_active = TRUE
+  AND (p.expires_at IS NULL OR p.expires_at > NOW())
+ORDER BY t.id,
+         CASE WHEN p.principal_type IN ('user', 'service') THEN 0 ELSE 1 END,
+         p.created_at ASC,
+         p.id ASC
+`
+
+type ListActiveREMTargetsRow struct {
+	TenantID    uuid.UUID `json:"tenant_id"`
+	PrincipalID uuid.UUID `json:"principal_id"`
+}
+
+func (q *Queries) ListActiveREMTargets(ctx context.Context) ([]ListActiveREMTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveREMTargets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveREMTargetsRow{}
+	for rows.Next() {
+		var i ListActiveREMTargetsRow
+		if err := rows.Scan(&i.TenantID, &i.PrincipalID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveVerifiedByProject = `-- name: ListActiveVerifiedByProject :many
 SELECT
     id,
