@@ -14,24 +14,37 @@ type Querier interface {
 	ClaimNextOpaqueRequest(ctx context.Context, arg ClaimNextOpaqueRequestParams) (ClaimNextOpaqueRequestRow, error)
 	CloseMemoryVersionValidity(ctx context.Context, arg CloseMemoryVersionValidityParams) (int64, error)
 	CompleteOpaqueRequest(ctx context.Context, arg CompleteOpaqueRequestParams) (int64, error)
+	CountTenantProjectsByIDs(ctx context.Context, arg CountTenantProjectsByIDsParams) (int64, error)
 	EnqueueMemoryJob(ctx context.Context, arg EnqueueMemoryJobParams) error
 	EvaluateTaskAccessSnapshot(ctx context.Context, arg EvaluateTaskAccessSnapshotParams) (EvaluateTaskAccessSnapshotRow, error)
+	GetAgentByExternalKey(ctx context.Context, arg GetAgentByExternalKeyParams) (Agent, error)
+	GetAgentByID(ctx context.Context, arg GetAgentByIDParams) (Agent, error)
 	GetMemoryByID(ctx context.Context, arg GetMemoryByIDParams) (GetMemoryByIDRow, error)
 	GetMemoryByIdempotencyKey(ctx context.Context, arg GetMemoryByIdempotencyKeyParams) (GetMemoryByIdempotencyKeyRow, error)
 	GetMemoryVersionPointInTime(ctx context.Context, arg GetMemoryVersionPointInTimeParams) (MemoryVersion, error)
 	GetOpaqueRequestByID(ctx context.Context, arg GetOpaqueRequestByIDParams) (OpaqueMemoryRequest, error)
 	GetOpaqueRequestByIdempotencyKey(ctx context.Context, arg GetOpaqueRequestByIdempotencyKeyParams) (OpaqueMemoryRequest, error)
 	GetOpaqueRequestForExecution(ctx context.Context, arg GetOpaqueRequestForExecutionParams) (OpaqueMemoryRequest, error)
+	GetPrincipalByID(ctx context.Context, arg GetPrincipalByIDParams) (GetPrincipalByIDRow, error)
+	GetProjectByID(ctx context.Context, arg GetProjectByIDParams) (Project, error)
+	GetProjectBySlug(ctx context.Context, arg GetProjectBySlugParams) (Project, error)
+	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
+	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
+	InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent, error)
 	InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error
 	InsertMemory(ctx context.Context, arg InsertMemoryParams) error
 	InsertMemoryFeedback(ctx context.Context, arg InsertMemoryFeedbackParams) error
 	InsertMemoryRelation(ctx context.Context, arg InsertMemoryRelationParams) error
 	InsertMemoryVersion(ctx context.Context, arg InsertMemoryVersionParams) error
 	InsertOpaqueRequest(ctx context.Context, arg InsertOpaqueRequestParams) error
+	InsertPrincipal(ctx context.Context, arg InsertPrincipalParams) (InsertPrincipalRow, error)
+	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertSource(ctx context.Context, arg InsertSourceParams) error
+	InsertTenant(ctx context.Context, arg InsertTenantParams) (Tenant, error)
 	ListActiveRelationsByMemoryID(ctx context.Context, arg ListActiveRelationsByMemoryIDParams) ([]MemoryRelation, error)
 	ListVersionsByMemoryID(ctx context.Context, memoryID uuid.UUID) ([]MemoryVersion, error)
 	LockActiveTopicMemory(ctx context.Context, arg LockActiveTopicMemoryParams) (LockActiveTopicMemoryRow, error)
+	LookupPrincipalsByPrefix(ctx context.Context, apiKeyPrefix string) ([]LookupPrincipalsByPrefixRow, error)
 	MarkOpaqueRequestFailedPermanent(ctx context.Context, arg MarkOpaqueRequestFailedPermanentParams) (int64, error)
 	PurgeTerminalOpaqueRequests(ctx context.Context, retentionSeconds float64) (int64, error)
 	RenewOpaqueRequestLease(ctx context.Context, arg RenewOpaqueRequestLeaseParams) (int64, error)

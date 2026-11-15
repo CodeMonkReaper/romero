@@ -26,6 +26,7 @@ const (
 
 var (
 	ErrNilPool             = errors.New("postgres connection pool is required")
+	ErrAlreadyExists       = errors.New("resource already exists")
 	ErrIdempotencyConflict = errors.New("idempotency key reused with different request payload")
 	ErrLeaseLost           = errors.New("opaque request lease expired or superseded")
 	ErrInvalidInput        = errors.New("invalid persistence input")
@@ -100,6 +101,14 @@ func (s *Store) NewTxTaskPermissions(tx pgx.Tx) (*TaskPermissionRepository, erro
 		return nil, fmt.Errorf("%w: transaction is required", ErrInvalidInput)
 	}
 	return &TaskPermissionRepository{q: s.queries.WithTx(tx)}, nil
+}
+
+// Provisioning returns a ProvisioningStore backed by the Store pool.
+func (s *Store) Provisioning() *ProvisioningStore {
+	return &ProvisioningStore{
+		pool:    s.pool,
+		queries: s.queries,
+	}
 }
 
 // OpaqueRequests returns the durable opaque request queue with leaseDuration (defaults to 60s if <= 0).
