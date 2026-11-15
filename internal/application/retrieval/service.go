@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/romero-project/romero/internal/domain/governor"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/domain/security"
@@ -84,6 +85,8 @@ type Service struct {
 	opaqueStatus OpaqueStatusReader
 	search       memory.SearchRepository
 	embedder     memory.EmbeddingProvider
+	reranker     memory.RerankerProvider
+	profile      governor.Profile
 	graphCache   GraphProjector
 	clock        func() time.Time
 }
@@ -109,6 +112,13 @@ func NewService(
 		opaqueStatus: opaqueStatus,
 		clock:        clock,
 	}, nil
+}
+
+// WithReranker attaches an optional Cross-Encoder RerankerProvider for the ultra profile.
+func (s *Service) WithReranker(reranker memory.RerankerProvider, profile governor.Profile) *Service {
+	s.reranker = reranker
+	s.profile = profile
+	return s
 }
 
 // GetMemory retrieves a memory in current or Point-in-Time mode, enforcing Zero-Trust isolation.

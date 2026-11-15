@@ -287,6 +287,11 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 			if err := s.closeAndSupersedeOldStateTx(ctx, reg, oldMem, newID, cmd.ChangeReason, now); err != nil {
 				return err
 			}
+			restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, oldMem.TenantID, oldMem.ID, now)
+			if cleanErr != nil {
+				return cleanErr
+			}
+			delta.upserts = append(delta.upserts, restored...)
 		}
 
 		newView, _, txErr := s.insertMemoryWithSourceTx(ctx, reg, auth, captureCmd, memory.StatusActive, newID, now)
@@ -367,6 +372,7 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 	var denied bool
 	var deniedReason string
 	var deniedScope string
+	var restored []memory.Memory
 	err := s.uow.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
 		mem, accessErr := s.loadAndAuthorizeTarget(ctx, reg, auth, memoryID, true)
 		if accessErr != nil {
@@ -393,6 +399,11 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 		mem.Clocks.ValidUntil = &now
 		if err := reg.Memories().UpdateMemoryState(ctx, *mem); err != nil {
 			return err
+		}
+		var cleanErr error
+		restored, cleanErr = cleanupOrphanConflictsTx(ctx, reg, mem.TenantID, mem.ID, now)
+		if cleanErr != nil {
+			return cleanErr
 		}
 		if err := reg.Memories().InsertMemoryVersion(ctx, memory.MemoryVersion{
 			ID:              uuid.New(),
@@ -445,6 +456,9 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 	}
 	if out != nil && s.graphNotifier != nil {
 		s.graphNotifier.ApplyMemoryStatusChange(out.TenantID, out.ProjectID, out.ID, out.Status, out.ValidUntil)
+		for _, r := range restored {
+			s.graphNotifier.ApplyMemoryUpsert(r)
+		}
 	}
 	return &MutationResult{Memory: out}, nil
 }
@@ -536,6 +550,11 @@ func (s *Service) executeCaptureTxDetailed(
 		if err := s.closeAndSupersedeOldStateTx(ctx, reg, supersedingOld, newID, "superseded by topic_key", now); err != nil {
 			return nil, false, delta, err
 		}
+		restored, cleanErr := cleanupOrphanConflictsTx(ctx, reg, supersedingOld.TenantID, supersedingOld.ID, now)
+		if cleanErr != nil {
+			return nil, false, delta, cleanErr
+		}
+		delta.upserts = append(delta.upserts, restored...)
 		delta.statusChanges = append(delta.statusChanges, l1StatusChange{
 			tenantID:   supersedingOld.TenantID,
 			projectID:  supersedingOld.ProjectID,
@@ -1548,6 +1567,75 @@ func (s *Service) applyL1Delta(delta l1Delta) {
 	if len(delta.relations) > 0 {
 		s.graphNotifier.ApplyRelationsAdded(delta.relations)
 	}
+}
+
+type semanticNeighborTxProvider interface {
+	SemanticNeighbors() memory.SemanticNeighborRepository
+}
+
+func cleanupOrphanConflictsTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	tenantID uuid.UUID,
+	closedMemoryID uuid.UUID,
+	now time.Time,
+) ([]memory.Memory, error) {
+	provider, ok := reg.(semanticNeighborTxProvider)
+	if !ok {
+		return nil, nil
+	}
+	peers, err := provider.SemanticNeighbors().DeactivateConflictsByMemoryID(ctx, tenantID, closedMemoryID, now)
+	if err != nil {
+		return nil, err
+	}
+	var restored []memory.Memory
+	for _, peerID := range peers {
+		peer, err := reg.Memories().GetMemoryByID(ctx, tenantID, peerID)
+		if err != nil || peer.Status != memory.StatusConflicted {
+			continue
+		}
+		hasOther, err := provider.SemanticNeighbors().HasActiveConflicts(ctx, tenantID, peerID, now)
+		if err != nil {
+			return nil, err
+		}
+		if hasOther || peer.Confidence < memory.QuarantineThreshold {
+			continue
+		}
+		if err := reg.Memories().CloseMemoryVersionValidity(ctx, peer.ID, peer.Version, now); err != nil {
+			return nil, err
+		}
+		peer.Status = memory.StatusActive
+		peer.Version++
+		peer.UpdatedAt = now
+		if err := reg.Memories().UpdateMemoryState(ctx, *peer); err != nil {
+			return nil, err
+		}
+		if err := reg.Memories().InsertMemoryVersion(ctx, memory.MemoryVersion{
+			ID:              uuid.New(),
+			MemoryID:        peer.ID,
+			Version:         peer.Version,
+			Summary:         peer.Summary,
+			Content:         peer.Content,
+			Tags:            append([]string(nil), peer.Tags...),
+			Entities:        append([]string(nil), peer.Entities...),
+			Metadata:        cloneMap(peer.Metadata),
+			EpistemicStatus: peer.EpistemicStatus,
+			AlphaScore:      peer.AlphaScore,
+			BetaScore:       peer.BetaScore,
+			Importance:      peer.Importance,
+			UtilityScore:    peer.UtilityScore,
+			Status:          memory.StatusActive,
+			ValidFrom:       peer.Clocks.ValidFrom,
+			ValidUntil:      peer.Clocks.ValidUntil,
+			ChangedBySource: &peer.PrimarySourceID,
+			ChangeReason:    "conflict_peer_closed",
+			CreatedAt:       now,
+		}); err != nil {
+			return nil, err
+		}
+		restored = append(restored, *peer)
+	}
+	return restored, nil
 }
 
 // MemoryFromView converts a capture MemoryView back into a domain memory.Memory for L1 synchronization.
