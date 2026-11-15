@@ -1,5 +1,37 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-15 — Plan técnico `phase-03-nli-governor-rem` (`02-DOCS/wiki/sdd/plans/phase-03-nli-governor-rem.md`)
+
+- **Tarea / Fase:** `plan` (`phase-03-nli-governor-rem`)
+- **Contexto:** Diseño de la arquitectura, contratos entre componentes, flujo de datos, estrategia de pruebas por criterio (`AC-01`..`AC-08`), secuenciación y mitigación de riesgos para la Fase 03 (`NLI`, `ConflictService`, `PowerGovernor` y `REMConsolidationService`).
+- **Opciones consideradas:**
+  1. Ejecutar el ciclo completo de consolidación de Sueño REM de un proyecto dentro de una sola transacción SQL y descargar sincrónicamente la VRAM del modelo generativo antes de atender peticiones de agentes.
+  2. Ejecutar la inferencia SLM y la validación NLI cruzada fuera de cualquier transacción SQL bajo un `context.Context` gobernado por `PowerGovernor` (cancelable en $< 10\text{ ms}` vía `BeginAgentRequest()` con descarga asíncrona de VRAM en una goroutine separada), abrir una transacción ACID corta únicamente por clúster validado tras verificar `remCtx.Err() == nil`, filtrar el vecindario NLI y los episodios REM estrictamente por la partición exacta `(tenant_id, project_id, scope_type, owner_agent_id, task_id)`, y cerrar automáticamente las aristas `contradicts` huérfanas al archivar o superceder un recuerdo.
+- **Decisión:** Opción 2.
+- **Por qué:** Garantiza el presupuesto de preempción en $< 10\text{ ms}` (Principio 18) y de latencia en tiempo real $p_{95} < 18\text{ ms}` (Principio 17) sin retener bloqueos de fila durante la inferencia, preserva $0.00\%$ de fuga entre ámbitos (`AC-04`, `AC-07`), evita conflictos huérfanos en `ListConflicts` (`AC-05`) y no requiere migraciones destructivas sobre el esquema SQL fundacional.
+
+## 2026-11-15 — Clarificación (`clarify`) de `phase-03-nli-governor-rem`
+
+- **Tarea / Fase:** `clarify` (`phase-03-nli-governor-rem`)
+- **Contexto:** Cierre de brechas de la especificación `02-DOCS/wiki/sdd/specs/phase-03-nli-governor-rem.md` tras recorrer la lista de verificación de `clarify` sobre las cuatro preguntas ASDD y los límites fuera de alcance.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Autorización de `TriggerREM` (`POST /api/v1/admin/consolidate` — `AC-07`):** Se autoriza tanto a principales administrativos (`is_admin = true`, sobre cualquier proyecto del inquilino) como a principales de tipo `orchestrator` con permiso de escritura sobre el `project_id` solicitado, rechazando con `403 Forbidden` (`denied` en auditoría) a agentes ordinarios (`agent`) o principales sin acceso de escritura al proyecto.
+  2. **Validación de las 4 suposiciones tomadas + cierre automático de conflictos huérfanos y `romero eval` determinista en CPU (`AC-05`, `AC-08`):** Se confirman (a) `conflict_id` como UUID de la relación activa `contradicts`, (b) refuerzo bayesiano $+\Delta\alpha = 1.0$ y versión inmutable opcional del ganador en `ReviewConflict` (exigiendo lectura y escritura síncronas sin cola opaca), (c) persistencia vectorial con `nli_checked = false` cuando NLI no está activo/disponible, (d) parámetros `project_id` y `dry_run` en `TriggerREM`/`romero consolidate`, (e) cierre automático de aristas `contradicts` (y restauración a `active` del par si no tiene otros conflictos ni cuarentena bayesiana) cuando un extremo se archiva o supercede fuera de `ReviewConflict`, y (f) evaluación determinista en CPU dentro de `romero eval`.
+- **Por qué:** Elimina la contradicción interna entre `Users & context` y `Error paths` sobre quién invoca `TriggerREM`, impide que contradicciones obsoletas permanezcan activas en `ListConflicts` y deja `phase-03-nli-governor-rem.md` en estado `clarified` lista para `plan`.
+
+## 2026-11-15 — Especificación funcional `phase-03-nli-governor-rem` (NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM)
+
+- **Tarea / Fase:** `specify` (`phase-03-nli-governor-rem`)
+- **Contexto:** Definición del contrato funcional (QUÉ y POR QUÉ) para la Fase 03 de ROMERO, resolviendo 6 decisiones de frontera con el usuario en dos rondas antes de redactar `02-DOCS/wiki/sdd/specs/phase-03-nli-governor-rem.md`.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Modo de ejecución ASDD:** Flujo con aprobación humana por fase (*gated*: revisión en `spec` -> `clarify` -> `plan` -> `tasks` -> `analyze` -> `implement`).
+  2. **Alcance funcional de Fase 03:** Unificar los Sprints 3 y 4 de la Especificación Maestra en la Fase 03 — Reordenamiento Cross-Encoder (`bge-reranker-v2-m3`), Detector NLI de soporte y contradicciones (`mDeBERTa-v3`), listado y arbitraje de conflictos (`ListConflicts`, `ReviewConflict`), `PowerGovernor` (`guard` / `burst` / `rem_sleep` con preempción en $< 10\text{ ms}`), Consolidación en Sueño REM (`TriggerREM`, `romero consolidate`) y métricas NLI/REM en `romero eval` — completando los 13 endpoints REST canónicos y dejando el servidor MCP (Sprint 5) para la Fase 04.
+  3. **Frontera Zero-Trust en inferencia lógica automática (NLI):** La comparación y creación automática de aristas `supports` y `contradicts` opera exclusivamente dentro de la misma partición de ámbito efectiva (nunca cruza `agent_private` de distintos agentes ni `task_shared` de distintas tareas), garantizando $0.00\%$ de fuga en `ListConflicts` y en alertas de contradicción.
+  4. **Regla de autoridad ante contradicción NLI entre distintas `topic_key`:** Cuando se detecta contradicción ($P(\text{Contradiction}) \ge 0.80$), pasa a estado `conflicted` únicamente el recuerdo de menor rango epistemológico (en empate, el de menor confianza bayesiana $\hat{\theta}$, y si persiste el empate, el recién evaluado), sin degradar nunca automáticamente un recuerdo `verified`.
+  5. **Autorización y efecto de `ReviewConflict`:** Cualquier principal con lectura y escritura vigente en el ámbito de ambos recuerdos puede resolver el conflicto (exigiendo principal administrativo si el recuerdo que resultaría perdedor es `verified`); en una sola transacción el ganador queda `active`, el perdedor pasa a `superseded` con `valid_until` cerrado, se desactiva la arista `contradicts` y se crea una arista activa `supersedes`.
+  6. **Aislamiento de ámbito y preempción en Consolidación de Sueño REM:** Los episodios se agrupan estrictamente dentro de la misma partición de ámbito (heredando ese ámbito en el recuerdo destilado), se validan con NLI cruzado ($\ge 0.80$ de implicación respecto a las fuentes y cero contradicciones con recuerdos `verified`), y si el ciclo es interrumpido por preempción ($< 10\text{ ms}$) o los motores no están disponibles, los episodios fuente permanecen intactos en estado `active`.
+- **Por qué:** Cierra el ciclo completo de los 4 motores cognitivos y los 13 endpoints REST canónicos de ROMERO bajo aislamiento Zero-Trust estricto y respeto a los presupuestos de latencia y VRAM de los Principios 17 y 18.
+
 ## 2026-11-15 — Plan técnico `phase-02-hybrid-retrieval` (`02-DOCS/wiki/sdd/plans/phase-02-hybrid-retrieval.md`)
 
 - **Tarea / Fase:** `plan` (`phase-02-hybrid-retrieval`)
