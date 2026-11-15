@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/romero-project/romero/internal/application/eval"
 	"github.com/romero-project/romero/internal/application/provisioning"
 	"github.com/romero-project/romero/internal/domain/identity"
 )
@@ -60,6 +61,7 @@ type Dependencies struct {
 	Migrator        Migrator
 	OpenProvisioner func(ctx context.Context, dsn string) (ProvisioningClient, func(), error)
 	Serve           func(ctx context.Context, dsn, listenAddr string) error
+	Eval            func(ctx context.Context, datasetPath string, maxTokens, hops int) (*eval.Report, error)
 }
 
 func resolveDSN(flagDSN, configPath string) (string, error) {

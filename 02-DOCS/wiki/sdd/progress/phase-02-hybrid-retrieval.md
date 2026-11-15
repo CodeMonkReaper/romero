@@ -9,9 +9,16 @@
 | `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `verified` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
 | `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
-| `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `ready-for-agent` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
+| `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `verified` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T006 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/32
+- branch: `feat/t006-phase02-rest-wiring-eval` (base `ab37b68`)
+- controls (`go1.27.3`): `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go test -count=1 ./internal/interfaces/rest/... ./internal/interfaces/cli/... ./internal/application/eval/... ./cmd/romero/...` PASS, `go run ./cmd/romero eval` PASS (`ndcg_at_5`: `1.0`, `multi_hop_recall`: `1.0`, `obsolete_suppression_rate`: `1.0`, `zero_trust_leakage_rate`: `0.0`).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`8cb8448a`): `2 findings: 0 blockers, 2 nits` (`VERDICT: approved`) — both nits (`ndcg >= 0.85` threshold and top-level `system/status` L1 fields) applied.
+- traceability: `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12`.
 
 ## T005 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/31

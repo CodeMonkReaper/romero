@@ -534,3 +534,12 @@ func TestServeCommand(t *testing.T) {
 		t.Fatalf("expected flag override 127.0.0.1:7777, got %q", gotAddr)
 	}
 }
+
+func TestCLI_EvalCommand(t *testing.T) {
+	deps := cli.Dependencies{}
+	cmd := cli.NewRootCmd(deps)
+	cmd.SetArgs([]string{"eval"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error when Eval dependency is nil")
+	}
+}

@@ -41,6 +41,7 @@ func NewRootCmd(deps Dependencies) *cobra.Command {
 		newPrincipalCmd(&gf, deps),
 		newTaskPermissionCmd(&gf, deps),
 		newServeCmd(&gf, deps),
+		newEvalCmd(deps),
 	)
 	return root
 }
@@ -434,5 +435,40 @@ func newTaskPermissionMutateCmd(gf *globalFlags, deps Dependencies, isGrant bool
 	_ = cmd.MarkFlagRequired("project-id")
 	_ = cmd.MarkFlagRequired("task-id")
 	_ = cmd.MarkFlagRequired("principal-id")
+	return cmd
+}
+
+func newEvalCmd(deps Dependencies) *cobra.Command {
+	var (
+		datasetPath string
+		maxTokens   int
+		hops        int
+	)
+	cmd := &cobra.Command{
+		Use:   "eval",
+		Short: "Run Level 2 cognitive evaluation against a golden dataset",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if deps.Eval == nil {
+				return errors.New("eval dependency is not configured")
+			}
+			rep, err := deps.Eval(cmd.Context(), datasetPath, maxTokens, hops)
+			if err != nil {
+				return err
+			}
+			if err := writeJSON(cmd.OutOrStdout(), rep); err != nil {
+				return err
+			}
+			if !rep.Pass {
+				return fmt.Errorf("cognitive evaluation failed thresholds: ndcg@5=%.3f multihop=%.3f obsolete=%.3f leakage=%.4f",
+					rep.NDCGAt5, rep.MultiHopRecall, rep.ObsoleteSuppressionRate, rep.ZeroTrustLeakageRate)
+			}
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&datasetPath, "dataset", "tests/evaluation/golden_dataset.json", "path to golden evaluation dataset JSON")
+	f.IntVar(&maxTokens, "max-tokens", 2048, "token budget for BuildContext evaluation")
+	f.IntVar(&hops, "hops", 2, "spreading activation hop depth [1..3]")
 	return cmd
 }
