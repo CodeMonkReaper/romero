@@ -6,7 +6,7 @@ tags: [sdd, spec, romero, phase-01, zero-trust, bitemporal, bayesian]
 timestamp: 2026-11-11T21:11:00-03:00
 topic: sdd
 slug: phase-01-foundation
-branch: [feat/phase-01-foundation, feat/t004-postgres-persistence]
+branch: [feat/phase-01-foundation, feat/t004-postgres-persistence, feat/t005-provisioning-cli]
 status: planned
 ---
 

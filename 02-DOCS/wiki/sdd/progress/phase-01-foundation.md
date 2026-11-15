@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T005 — 2026-11-14 — verified-awaiting-merge
+- issue: https://github.com/CodeMonkReaper/romero/issues/5
+- branch: `feat/t005-provisioning-cli` (worktree `.worktrees/t005-provisioning-cli`, base `56778e2`)
+- commits: `88a0446` (SQL queries + `sqlcgen` + PG17 `ProvisioningStore`, Zero-Trust `provisioning` service/keys/constant-time `Authenticator`, Cobra CLI commands, tests, `cobra v1.10.2` / `go-toml/v2 v2.4.3` / `golang.org/x/text v0.41.0`), `5702454` (Round 1 panel fixes: Composition Root wiring in `cmd/romero/wiring.go`, `mapPGError`, orphaned-agent SQL/auth fail-closed + nil-audit guards, negative `--expires-in` & duplicate `task_id` checks, expanded PG17/unit/CLI tests)
+- controls (`golang:1.27` + `romero-t005-pg` pg17 on `5702454`): `sqlc generate` PASS, `gofmt -l` PASS, `go mod verify` (`all modules verified`), `CGO_ENABLED=0 go build ./cmd/romero` PASS, `go vet ./...` PASS, `CGO_ENABLED=1 go test -count=1 -race -cover ./...` PASS (`provisioning` `91.1%`, `cli` `93.9%`, `postgres` `72.0%`, `cmd/romero` `66.4%`, `identity` `98.2%`, `memory` `86.5%`, `provenance` `100.0%`, `security` `100.0%`, `migrations` ok), E2E CLI binary smoke (`bootstrap` -> `principal create` -> `task-permission grant/revoke`) PASS, `golangci-lint run` (`0 issues.`), `govulncheck ./...` (`No vulnerabilities found.`), `git diff --check` PASS.
+- risk & review: `rsc risk --base 56778e2` computed **Tier 2** (`classes: auth, default, docs`, `reviewers: 3`, `human approval: required`). Panel Round 1 (`88a0446`: Security 0B/3N, Correctness 2B/2N, Tests 3B/3N) -> fixed in `5702454` -> Panel Round 2 (`2e5c1c5b` Correctness 0B/2N, `6d048c51` Security 0B/0N, `238de717` Tests 0B/3N) **0 blockers** (`VERDICT: pass`). Reports: [phase-01-foundation-T005.md](../reviews/phase-01-foundation-T005.md) and [phase-01-foundation-T005-2026-11-14.md](../verifications/phase-01-foundation-T005-2026-11-14.md).
+- next: push `feat/t005-provisioning-cli`, open PR to `main` (`Closes #5`), and wait for Tier 2 human approval before merging and cleaning up containers/worktree.
+
 ## T004 — 2026-11-14 — verified-awaiting-merge
 - issue: https://github.com/CodeMonkReaper/romero/issues/4
 - branch: `feat/t004-postgres-persistence` (worktree `.worktrees/t004-postgres-persistence`, base `50bd63d`)
