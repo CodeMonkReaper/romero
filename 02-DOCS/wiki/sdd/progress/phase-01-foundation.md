@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T011 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/20
+- branch: `feat/t011-opaque-worker` (base `c47a384`)
+- red/green: stub `Worker` failed behavioral tests (`not implemented`), then passed with triangulation covering empty claim, reauthorization, cross-task isolation, permanent vs transient classification, lease renewal cancellation, 30d purge, and `ServiceExecutor` across all 5 opaque ops.
+- controls (`golang:1.27` + `golangci-lint:latest`): `gofmt -s -w` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go vet ./...` PASS, `golangci-lint run ./internal/application/requests/... ./internal/application/capture/... ./internal/application/feedback/...` (`0 issues.`), `CGO_ENABLED=1 go test -count=1 -race -cover` PASS.
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `human approval: not required`). Fresh-context Tier 1 Round 1 (`2 blockers`, `4 nits` — `OpaqueOpFeedback` `ExecuteOpaqueFeedbackTx` for non-readers, `OpaqueOpSupersede` destination scope lock, `RecordAllowed` + timer + tests) -> fixed -> Round 2 (`VERDICT: pass`, 0 blockers).
+- traceability: `AC-T3`, `AC-T9`, `AC-T10`, `AC-T12`.
+
 ## T007 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/7
 - branch: `feat/t007-retrieval-feedback` (base `72039cf`)
