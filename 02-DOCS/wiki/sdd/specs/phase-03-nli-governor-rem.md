@@ -6,13 +6,13 @@ tags: [sdd, spec, romero, phase-03, nli, conflicts, reranker, power-governor, re
 timestamp: 2026-11-15T14:16:00-03:00
 topic: sdd
 slug: phase-03-nli-governor-rem
-status: planned
-branch: feat/t001-phase03-domain-governor
+status: implemented
+branch: main
 ---
 
 # Spec — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM
 
-> Slug: `phase-03-nli-governor-rem` · Status: planned · Created: 2026-11-15
+> Slug: `phase-03-nli-governor-rem` · Status: implemented · Created: 2026-11-15
 > Inherits: [constitution](../constitution.md) · Builds on: [phase-01-foundation](phase-01-foundation.md), [phase-02-hybrid-retrieval](phase-02-hybrid-retrieval.md)
 
 ## Problem & why
