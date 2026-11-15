@@ -291,7 +291,7 @@ func (o *OpaqueRequestStore) Execute(ctx context.Context, lease Lease, apply App
 		CreatedAt:      row.CreatedAt,
 	}
 
-	reg := &repoRegistry{txQueries: txQueries, poolQueries: o.queries}
+	reg := &repoRegistry{tx: tx, txQueries: txQueries, poolQueries: o.queries}
 	txPerms := &TaskPermissionRepository{q: txQueries}
 	resultMemoryID, err := apply(ctx, reg, txPerms, record)
 	if err != nil {
