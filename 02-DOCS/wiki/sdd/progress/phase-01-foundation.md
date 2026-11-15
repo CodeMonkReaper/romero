@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T004 — 2026-11-14 — verified-awaiting-merge
+- issue: https://github.com/CodeMonkReaper/romero/issues/4
+- branch: `feat/t004-postgres-persistence` (worktree `.worktrees/t004-postgres-persistence`, base `50bd63d`)
+- commits: `23699c2` (migration `00003`, `sqlc` queries/gen, PostgreSQL `UnitOfWork`, repositories, `TaskPermissionRepository`, `OpaqueRequestStore`, `pgx v5.9.2`, `goose v3.24.3`), `a9d35ac` (Round 1 panel fixes: `clock_timestamp()` leases, `COALESCE` boolean snapshot, `rollbackTx` timeout ctx, `MaxRetries *int32`, constraint-scoped `23505`, NULL `project_id` alignment in `LockActiveTopicMemory`, expanded tests)
+- controls (`romero-t004-go` / `romero-t004-pg` pg17 on `a9d35ac`): `sqlc generate` (clean, closes DQ-02), `gofmt`, `go mod verify` (`all modules verified`), `CGO_ENABLED=0 go build ./cmd/romero`, `go vet ./...`, `go test -count=1 -race -cover ./...` PASS (`postgres` `83.5%`, `identity` `98.2%`, `memory` `86.5%`, `provenance` `100.0%`, `security` `100.0%`, `cmd/romero` `83.3%`, `migrations` ok), `golangci-lint run` (`0 issues.`), `govulncheck ./...` (`No vulnerabilities found.`), `git diff --check` PASS.
+- risk & review: `rsc risk --base 50bd63d` computed **Tier 2** (`classes: default, migrations`, `reviewers: 3`, `humanApproval: required`). Panel Round 1 (`23699c2`: Correctness 1B/3N, Security 0B/3N, Tests 5B/3N) -> fixed in `a9d35ac` -> Panel Round 2 (`c1db109e` Correctness 0B/0N, `eafa6f68` Security 0B/2N, `1bf64c46` Tests 0B/3N) **0 blockers** (`VERDICT: pass`). Reports: [phase-01-foundation-T004.md](../reviews/phase-01-foundation-T004.md) and [phase-01-foundation-T004-2026-11-14.md](../verifications/phase-01-foundation-T004-2026-11-14.md).
+- next: push `feat/t004-postgres-persistence`, open PR to `main` (`Closes #4`), and wait for Tier 2 human approval before merging and cleaning up containers/worktree.
+
 ## T003 — 2026-11-14 — verified-awaiting-merge
 - issue: https://github.com/CodeMonkReaper/romero/issues/3
 - branch: `feat/t003-memory-provenance` (worktree `.worktrees/t003-memory-provenance`, base `b896d2a`)

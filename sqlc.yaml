@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "internal/infrastructure/persistence/queries"
-    schema: "migrations/00001_romero_core_schema.sql"
+    schema: "migrations"
     gen:
       go:
         package: "sqlcgen"
