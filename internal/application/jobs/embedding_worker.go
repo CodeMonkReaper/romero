@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	defaultJobType      = "embed_and_nli"
-	defaultBatchSize    = 16
-	defaultPollInterval = 250 * time.Millisecond
-	defaultBaseBackoff  = 2 * time.Second
+	defaultJobType           = "embed_and_nli"
+	defaultBatchSize         = 16
+	defaultPollInterval      = 250 * time.Millisecond
+	defaultBaseBackoff       = 2 * time.Second
+	defaultNLINeighborMinSim = float32(0.82)
+	defaultNLINeighborLimit  = 5
 )
 
 // EmbeddingWorkerConfig tunes polling, batch size, and retry backoff for EmbeddingWorker.
@@ -35,6 +37,9 @@ type EmbeddingWorker struct {
 	embeddings memory.EmbeddingRepository
 	provider   memory.EmbeddingProvider
 	notifier   memory.GraphMutationNotifier
+	uow        memory.UnitOfWork
+	neighbors  memory.SemanticNeighborRepository
+	nli        memory.NLIProvider
 	cfg        EmbeddingWorkerConfig
 	logger     *slog.Logger
 }
@@ -73,6 +78,19 @@ func NewEmbeddingWorker(
 		cfg:        cfg,
 		logger:     logger,
 	}
+}
+
+// WithNLI attaches optional UnitOfWork, SemanticNeighborRepository, and NLIProvider
+// to enable asynchronous NLI neighbor evaluation after embedding persistence.
+func (w *EmbeddingWorker) WithNLI(
+	uow memory.UnitOfWork,
+	neighbors memory.SemanticNeighborRepository,
+	nli memory.NLIProvider,
+) *EmbeddingWorker {
+	w.uow = uow
+	w.neighbors = neighbors
+	w.nli = nli
+	return w
 }
 
 // ProcessOnce claims and processes up to BatchSize pending embed_and_nli jobs.
@@ -146,6 +164,9 @@ func (w *EmbeddingWorker) ProcessOnce(ctx context.Context) (int, error) {
 		if w.notifier != nil {
 			w.notifier.ApplyEmbeddingUpsert(mem.TenantID, mem.ProjectID, mem.ID, embOut.Dense)
 		}
+		if w.nli != nil && w.neighbors != nil && w.uow != nil {
+			w.evaluateNLINeighbors(ctx, mem, text, embOut.Dense, now)
+		}
 		if err := w.queue.CompleteMemoryJob(ctx, job.ID, time.Now().UTC()); err != nil {
 			w.logger.Warn("complete memory job failed", slog.String("job_id", job.ID.String()), slog.Any("error", err))
 		}
@@ -183,4 +204,183 @@ func (w *EmbeddingWorker) Run(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (w *EmbeddingWorker) evaluateNLINeighbors(ctx context.Context, mem memory.Memory, memText string, denseVec []float32, now time.Time) {
+	neighbors, err := w.neighbors.FindSameScopeSemanticNeighbors(
+		ctx,
+		mem,
+		denseVec,
+		defaultNLINeighborMinSim,
+		defaultNLINeighborLimit,
+		now,
+	)
+	if err != nil {
+		w.logger.Warn("nli neighbor lookup failed", slog.String("memory_id", mem.ID.String()), slog.Any("error", err))
+		return
+	}
+
+	var scores []memory.NLIScore
+	if len(neighbors) > 0 {
+		pairs := make([]memory.NLIPairInput, len(neighbors))
+		for i, nb := range neighbors {
+			pairs[i] = memory.NLIPairInput{
+				Premise:    strings.TrimSpace(nb.Summary + "\n" + nb.Content),
+				Hypothesis: memText,
+			}
+		}
+		scores, err = w.nli.EvaluatePairs(ctx, pairs)
+		if err != nil || len(scores) != len(neighbors) {
+			w.logger.Warn("nli pair evaluation skipped", slog.String("memory_id", mem.ID.String()), slog.Any("error", err))
+			return
+		}
+	}
+
+	var addedRels []memory.MemoryRelation
+	var upsertedMems []memory.Memory
+	var statusChanges []memory.Memory
+
+	txErr := w.uow.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
+		curNew, err := reg.Memories().GetMemoryByID(ctx, mem.TenantID, mem.ID)
+		if err != nil {
+			return err
+		}
+		for i, nb := range neighbors {
+			score := scores[i]
+			dec := memory.EvaluateNLIDecision(*curNew, nb, score)
+			ent := score.Entailment
+			con := score.Contradiction
+
+			switch dec.Action {
+			case memory.NLIDecisionSupports:
+				curNb, err := reg.Memories().GetMemoryByID(ctx, nb.TenantID, nb.ID)
+				if err != nil {
+					return err
+				}
+				curNb.AlphaScore += dec.AlphaDelta
+				if curNb.AlphaScore+curNb.BetaScore > 0 {
+					curNb.Confidence = curNb.AlphaScore / (curNb.AlphaScore + curNb.BetaScore)
+				}
+				curNb.UpdatedAt = now
+				if err := reg.Memories().UpdateMemoryState(ctx, *curNb); err != nil {
+					return err
+				}
+				upsertedMems = append(upsertedMems, *curNb)
+
+				rel := memory.MemoryRelation{
+					ID:               uuid.New(),
+					TenantID:         curNew.TenantID,
+					ProjectID:        curNew.ProjectID,
+					FromMemoryID:     curNew.ID,
+					ToMemoryID:       curNb.ID,
+					RelationType:     memory.RelationSupports,
+					Weight:           score.Entailment,
+					NLIEntailment:    &ent,
+					NLIContradiction: &con,
+					SourceID:         &curNew.PrimarySourceID,
+					ValidFrom:        now,
+					IsActive:         true,
+					CreatedAt:        now,
+				}
+				if err := reg.Memories().InsertMemoryRelation(ctx, rel); err != nil {
+					return err
+				}
+				addedRels = append(addedRels, rel)
+
+			case memory.NLIDecisionContradicts:
+				rel := memory.MemoryRelation{
+					ID:               uuid.New(),
+					TenantID:         curNew.TenantID,
+					ProjectID:        curNew.ProjectID,
+					FromMemoryID:     curNew.ID,
+					ToMemoryID:       nb.ID,
+					RelationType:     memory.RelationContradicts,
+					Weight:           score.Contradiction,
+					NLIEntailment:    &ent,
+					NLIContradiction: &con,
+					SourceID:         &curNew.PrimarySourceID,
+					ValidFrom:        now,
+					IsActive:         true,
+					CreatedAt:        now,
+				}
+				if err := reg.Memories().InsertMemoryRelation(ctx, rel); err != nil {
+					return err
+				}
+				addedRels = append(addedRels, rel)
+
+				if dec.ConflictedMemoryID != nil {
+					target := curNew
+					if *dec.ConflictedMemoryID != curNew.ID {
+						target, err = reg.Memories().GetMemoryByID(ctx, nb.TenantID, *dec.ConflictedMemoryID)
+						if err != nil {
+							return err
+						}
+					}
+					if target.EpistemicStatus != memory.EpistemicVerified && target.Status == memory.StatusActive {
+						if err := markConflictedInTx(ctx, reg, target, now); err != nil {
+							return err
+						}
+						statusChanges = append(statusChanges, *target)
+					}
+				}
+			}
+		}
+
+		curNew.NLIChecked = true
+		curNew.UpdatedAt = now
+		if err := reg.Memories().UpdateMemoryState(ctx, *curNew); err != nil {
+			return err
+		}
+		upsertedMems = append(upsertedMems, *curNew)
+		return nil
+	})
+	if txErr != nil {
+		w.logger.Warn("nli transaction failed", slog.String("memory_id", mem.ID.String()), slog.Any("error", txErr))
+		return
+	}
+
+	if w.notifier != nil {
+		for _, m := range upsertedMems {
+			w.notifier.ApplyMemoryUpsert(m)
+		}
+		for _, m := range statusChanges {
+			w.notifier.ApplyMemoryStatusChange(m.TenantID, m.ProjectID, m.ID, m.Status, m.Clocks.ValidUntil)
+		}
+		if len(addedRels) > 0 {
+			w.notifier.ApplyRelationsAdded(addedRels)
+		}
+	}
+}
+
+func markConflictedInTx(ctx context.Context, reg memory.RepositoryRegistry, target *memory.Memory, now time.Time) error {
+	if err := reg.Memories().CloseMemoryVersionValidity(ctx, target.ID, target.Version, now); err != nil {
+		return err
+	}
+	target.Status = memory.StatusConflicted
+	target.Version++
+	target.UpdatedAt = now
+	if err := reg.Memories().UpdateMemoryState(ctx, *target); err != nil {
+		return err
+	}
+	return reg.Memories().InsertMemoryVersion(ctx, memory.MemoryVersion{
+		ID:              uuid.New(),
+		MemoryID:        target.ID,
+		Version:         target.Version,
+		Summary:         target.Summary,
+		Content:         target.Content,
+		Tags:            target.Tags,
+		Entities:        target.Entities,
+		Metadata:        target.Metadata,
+		EpistemicStatus: target.EpistemicStatus,
+		AlphaScore:      target.AlphaScore,
+		BetaScore:       target.BetaScore,
+		Importance:      target.Importance,
+		UtilityScore:    target.UtilityScore,
+		Status:          target.Status,
+		ValidFrom:       target.Clocks.ValidFrom,
+		ValidUntil:      target.Clocks.ValidUntil,
+		ChangedBySource: &target.PrimarySourceID,
+		ChangeReason:    "nli_contradiction",
+		CreatedAt:       now,
+	})
 }

@@ -174,3 +174,37 @@ func TestCognitiveGraph_EnsureLoaded(t *testing.T) {
 		t.Fatalf("expected 1 loader call, got %d", loader.calls)
 	}
 }
+
+func TestApplyRelationDeactivated(t *testing.T) {
+	tenantID := uuid.New()
+	projID := uuid.New()
+	relID := uuid.New()
+	now := time.Now().UTC()
+
+	g := cachel1.NewCognitiveGraph(nil)
+	g.ApplyRelationsAdded([]memory.MemoryRelation{{
+		ID:           relID,
+		TenantID:     tenantID,
+		ProjectID:    &projID,
+		FromMemoryID: uuid.New(),
+		ToMemoryID:   uuid.New(),
+		RelationType: memory.RelationContradicts,
+		Weight:       0.9,
+		ValidFrom:    now,
+		IsActive:     true,
+		CreatedAt:    now,
+	}})
+	if g.Stats().EdgesCount != 1 {
+		t.Fatalf("expected 1 edge, got %d", g.Stats().EdgesCount)
+	}
+	// Wrong tenant should not remove edge.
+	g.ApplyRelationDeactivated(uuid.New(), &projID, relID)
+	if g.Stats().EdgesCount != 1 {
+		t.Fatalf("expected edge preserved for wrong tenant, got %d", g.Stats().EdgesCount)
+	}
+	// Matching tenant removes edge.
+	g.ApplyRelationDeactivated(tenantID, &projID, relID)
+	if g.Stats().EdgesCount != 0 {
+		t.Fatalf("expected 0 edges after deactivation, got %d", g.Stats().EdgesCount)
+	}
+}
