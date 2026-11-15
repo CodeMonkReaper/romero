@@ -155,9 +155,9 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 	if degraded, _ := searchRaw["degraded_mode"].(bool); degraded {
 		t.Fatalf("expected degraded_mode=false when embedder is active")
 	}
-	itemsRaw, ok := searchRaw["items"].([]any)
+	itemsRaw, ok := searchRaw["candidates"].([]any)
 	if !ok || len(itemsRaw) == 0 {
-		t.Fatalf("expected non-empty search items, got %s", string(searchBody))
+		t.Fatalf("expected non-empty search candidates, got %s", string(searchBody))
 	}
 	foundM1, foundM2 := false, false
 	for _, raw := range itemsRaw {
@@ -190,10 +190,10 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 		t.Fatalf("context status=%d body=%s", ctxResp.StatusCode, string(ctxBody))
 	}
 	var ctxOut struct {
-		FormattedPrompt string `json:"formatted_prompt"`
-		DegradedMode    bool   `json:"degraded_mode"`
-		Items           []struct {
-			ID uuid.UUID `json:"id"`
+		CombinedXML  string `json:"combined_xml"`
+		DegradedMode bool   `json:"degraded_mode"`
+		Items        []struct {
+			MemoryID uuid.UUID `json:"memory_id"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(ctxBody, &ctxOut); err != nil {
@@ -202,8 +202,8 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 	if len(ctxOut.Items) == 0 {
 		t.Fatalf("expected context items, got 0")
 	}
-	if !strings.Contains(ctxOut.FormattedPrompt, `untrusted_content="true"`) || !strings.Contains(ctxOut.FormattedPrompt, "<romero_memory ") {
-		t.Fatalf("expected XML untrusted_content wrapping in formatted_prompt, got: %s", ctxOut.FormattedPrompt)
+	if !strings.Contains(ctxOut.CombinedXML, `untrusted_content="true"`) || !strings.Contains(ctxOut.CombinedXML, "<romero_memory ") {
+		t.Fatalf("expected XML untrusted_content wrapping in combined_xml, got: %s", ctxOut.CombinedXML)
 	}
 
 	// 5. GET /api/v1/memories/{id}/subgraph -> 1-hop edge between M1 and M2.
@@ -216,9 +216,9 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 			ID uuid.UUID `json:"id"`
 		} `json:"nodes"`
 		Edges []struct {
-			SourceID uuid.UUID `json:"source_id"`
-			TargetID uuid.UUID `json:"target_id"`
-			Type     string    `json:"type"`
+			FromMemoryID uuid.UUID `json:"from_memory_id"`
+			ToMemoryID   uuid.UUID `json:"to_memory_id"`
+			RelationType string    `json:"relation_type"`
 		} `json:"edges"`
 	}
 	if err := json.Unmarshal(subBody, &subOut); err != nil {
@@ -266,19 +266,38 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 		t.Fatalf("superseded memory %s leaked into default hybrid search: %s", m1ID, string(searchAfterSupBody))
 	}
 
+	// 7b. Archive M2 and verify L1 write-through removes it from default hybrid search (AC-06).
+	archResp, archBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/"+m2ID.String()+"/archive", agent.APIKey, map[string]any{
+		"reason": "e2e archive verification",
+	})
+	if archResp.StatusCode != http.StatusOK {
+		t.Fatalf("archive status=%d body=%s", archResp.StatusCode, string(archBody))
+	}
+	searchAfterArchResp, searchAfterArchBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", agent.APIKey, map[string]any{
+		"query":       "Checkout service timeout root cause",
+		"project_ids": []string{boot.Project.ID.String()},
+		"limit":       10,
+	})
+	if searchAfterArchResp.StatusCode != http.StatusOK {
+		t.Fatalf("search after archive status=%d", searchAfterArchResp.StatusCode)
+	}
+	if strings.Contains(string(searchAfterArchBody), m2ID.String()) {
+		t.Fatalf("archived memory %s leaked into default hybrid search: %s", m2ID, string(searchAfterArchBody))
+	}
+
 	// 8. L1 System status metrics & degraded_mode resilience when BGE-M3 fails.
 	statusResp, statusBody := env.DoJSON(t, http.MethodGet, "/api/v1/system/status", boot.APIKey, nil)
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("system status=%d body=%s", statusResp.StatusCode, string(statusBody))
 	}
 	var sysOut struct {
-		L1Nodes int `json:"l1_nodes"`
-		L1Edges int `json:"l1_edges"`
+		L1NodesCount int `json:"l1_nodes_count"`
+		L1EdgesCount int `json:"l1_edges_count"`
 	}
 	if err := json.Unmarshal(statusBody, &sysOut); err != nil {
 		t.Fatalf("unmarshal system status: %v", err)
 	}
-	if sysOut.L1Nodes == 0 || sysOut.L1Edges == 0 {
+	if sysOut.L1NodesCount == 0 || sysOut.L1EdgesCount == 0 {
 		t.Fatalf("expected non-zero L1 metrics, got %+v", sysOut)
 	}
 
@@ -293,9 +312,9 @@ func TestHybridRetrievalEndToEndLifecycle(t *testing.T) {
 	}
 	var degOut struct {
 		DegradedMode bool `json:"degraded_mode"`
-		Items        []struct {
+		Candidates   []struct {
 			ID uuid.UUID `json:"id"`
-		} `json:"items"`
+		} `json:"candidates"`
 	}
 	if err := json.Unmarshal(degBody, &degOut); err != nil {
 		t.Fatalf("unmarshal degraded search: %v", err)

@@ -59,16 +59,49 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	mForeignPayload := captureBody(tB.Project1ID, "project_shared", "Foreign tenant B secret alpha-zero-trust")
 	mForeignID := createMemoryViaREST(t, env, tB.Agent1Key, mForeignPayload)
 
-	// 1. ag1 searches with hops=2 for "alpha-zero-trust".
-	// Neither M_priv, M3 (only reachable via M_priv), nor mForeignID may appear.
-	searchResp, searchBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+	// 1a. Explicitly requesting an unauthorized foreign project_id must return 403 Forbidden.
+	forbResp, _ := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
 		"query":       "alpha-zero-trust",
 		"project_ids": []string{tA.Project1ID.String(), tB.Project1ID.String()},
 		"limit":       20,
 		"hops":        2,
 	})
+	if forbResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden when requesting foreign project %s, got %d", tB.Project1ID, forbResp.StatusCode)
+	}
+
+	// 1b. ag1 searches within authorized Tenant A project with hops=2 for "alpha-zero-trust".
+	// M1 must be present (non-vacuous) with relations_count == 0 (neighbor M_priv is unauthorized),
+	// and neither M_priv, M3 (only reachable via M_priv), nor mForeignID may appear.
+	searchResp, searchBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+		"query":       "alpha-zero-trust",
+		"project_ids": []string{tA.Project1ID.String()},
+		"limit":       20,
+		"hops":        2,
+	})
 	if searchResp.StatusCode != http.StatusOK {
 		t.Fatalf("search status=%d body=%s", searchResp.StatusCode, string(searchBody))
+	}
+	var searchOut struct {
+		Candidates []struct {
+			ID             uuid.UUID `json:"id"`
+			RelationsCount int       `json:"relations_count"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(searchBody, &searchOut); err != nil {
+		t.Fatalf("unmarshal search: %v", err)
+	}
+	foundM1 := false
+	for _, c := range searchOut.Candidates {
+		if c.ID == m1ID {
+			foundM1 = true
+			if c.RelationsCount != 0 {
+				t.Fatalf("expected authorized relations_count=0 for M1 (only edge points to unauthorized M_priv), got %d", c.RelationsCount)
+			}
+		}
+	}
+	if !foundM1 {
+		t.Fatalf("expected authorized memory M1 (%s) in search results, got %s", m1ID, string(searchBody))
 	}
 	bodyStr := string(searchBody)
 	if strings.Contains(bodyStr, mPrivID.String()) {
@@ -81,7 +114,7 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 		t.Fatalf("zero-trust breach: cross-tenant node %s leaked in search", mForeignID)
 	}
 
-	// 2. ag1 builds context with hops=2 -> must not leak M_priv, M3, or mForeignID.
+	// 2. ag1 builds context with hops=2 -> must include M1 and must not leak M_priv, M3, or mForeignID.
 	ctxResp, ctxBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/context", tA.Agent1Key, map[string]any{
 		"query":       "alpha-zero-trust",
 		"project_ids": []string{tA.Project1ID.String()},
@@ -91,7 +124,10 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	if ctxResp.StatusCode != http.StatusOK {
 		t.Fatalf("context status=%d body=%s", ctxResp.StatusCode, string(ctxBody))
 	}
-	if strings.Contains(string(ctxBody), mPrivID.String()) || strings.Contains(string(ctxBody), m3ID.String()) {
+	if !strings.Contains(string(ctxBody), m1ID.String()) {
+		t.Fatalf("expected authorized memory M1 (%s) in context response, got: %s", m1ID, string(ctxBody))
+	}
+	if strings.Contains(string(ctxBody), mPrivID.String()) || strings.Contains(string(ctxBody), m3ID.String()) || strings.Contains(string(ctxBody), mForeignID.String()) {
 		t.Fatalf("zero-trust breach in context prompt/items: %s", string(ctxBody))
 	}
 
@@ -130,5 +166,46 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	}
 	if deniedCount < 2 {
 		t.Fatalf("expected >= 2 denied audit events for unauthorized subgraph & relation attempts, got %d", deniedCount)
+	}
+
+	// 6. task_shared permission revocation (AC-03): grant task-rev read+write to ag2 and read to ag1,
+	// capture mTaskShared, confirm ag1 sees it, then revoke ag1 and verify 0% leakage.
+	for _, args := range [][]string{
+		{"task-permission", "grant", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", tA.Agent2Princ.String(), "--read", "--write"},
+		{"task-permission", "grant", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", tA.Agent1Princ.String(), "--read"},
+	} {
+		if out, err := env.RunCLI(t, args...); err != nil {
+			t.Fatalf("task-permission grant failed: %v\n%s", err, out)
+		}
+	}
+	taskPayload := captureBody(tA.Project1ID, "task_shared", "Revocable task secret beta-revoked")
+	taskPayload["task_id"] = "task-rev"
+	mTaskID := createMemoryViaREST(t, env, tA.Agent2Key, taskPayload)
+
+	visResp, visBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+		"query":       "beta-revoked",
+		"project_ids": []string{tA.Project1ID.String()},
+		"task_id":     "task-rev",
+		"limit":       10,
+	})
+	if visResp.StatusCode != http.StatusOK || !strings.Contains(string(visBody), mTaskID.String()) {
+		t.Fatalf("expected ag1 to see task_shared memory %s before revocation; status=%d body=%s", mTaskID, visResp.StatusCode, string(visBody))
+	}
+
+	if out, err := env.RunCLI(t, "task-permission", "revoke", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", tA.Agent1Princ.String()); err != nil {
+		t.Fatalf("task-permission revoke failed: %v\n%s", err, out)
+	}
+
+	revResp, revBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+		"query":       "beta-revoked",
+		"project_ids": []string{tA.Project1ID.String()},
+		"task_id":     "task-rev",
+		"limit":       10,
+	})
+	if revResp.StatusCode != http.StatusOK {
+		t.Fatalf("search after task revocation status=%d body=%s", revResp.StatusCode, string(revBody))
+	}
+	if strings.Contains(string(revBody), mTaskID.String()) {
+		t.Fatalf("zero-trust breach: revoked task_shared memory %s still visible in search: %s", mTaskID, string(revBody))
 	}
 }
