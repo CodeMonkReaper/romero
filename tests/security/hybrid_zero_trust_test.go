@@ -36,27 +36,56 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	tB := seedTenantForIsolation(t, env, "hyb-sec-b")
 	ctx := context.Background()
 
-	// Seed multi-hop chain inside Tenant A:
-	// M1 (project_shared, accessible to ag1 and ag2)
-	// M_priv (agent_private owned by ag2 -> invisible to ag1)
-	// M3 (project_shared, accessible to ag1 and ag2, linked ONLY through M_priv!)
-	m1Payload := captureBody(tA.Project1ID, "project_shared", "Shared bridge start token alpha-zero-trust")
-	m1ID := createMemoryViaREST(t, env, tA.Agent2Key, m1Payload)
+	// Provision ag3 inside Tenant A / Project1ID so it can own agent_private memories in Project1ID.
+	ag3ID := uuid.New()
+	if _, err := env.Pool.Exec(ctx,
+		`INSERT INTO agents (id, tenant_id, external_key, name, role_type) VALUES ($1, $2, $3, $4, 'worker')`,
+		ag3ID, tA.TenantID, "ext-ag3-"+ag3ID.String()[:8], "ag3-hyb-sec-a",
+	); err != nil {
+		t.Fatalf("insert ag3: %v", err)
+	}
+	pOut, err := env.RunCLI(t,
+		"principal", "create",
+		"--dsn", testpg.TestDSN(),
+		"--tenant-id", tA.TenantID.String(),
+		"--agent-id", ag3ID.String(),
+		"--type", "agent",
+		"--name", "ag3-hyb-sec-a",
+		"--projects", tA.Project1ID.String(),
+		"--scopes", "agent_private,task_shared,org_shared",
+	)
+	if err != nil {
+		t.Fatalf("create ag3 principal: %v\n%s", err, pOut)
+	}
+	var ag3Res struct {
+		Principal idHolder `json:"principal"`
+		APIKey    string   `json:"api_key"`
+	}
+	if err := json.Unmarshal([]byte(pOut), &ag3Res); err != nil {
+		t.Fatalf("unmarshal ag3: %v", err)
+	}
 
-	mPrivPayload := captureBody(tA.Project1ID, "agent_private", "Top-secret ag2 private credential alpha-zero-trust")
+	// Seed multi-hop chain inside Tenant A (Project1ID, owned by ag3 which is distinct from ag1):
+	// M1 (org_shared, accessible to ag1)
+	// M_priv (agent_private owned by ag3 -> invisible to ag1)
+	// M3 (org_shared, accessible to ag1, linked ONLY through M_priv!)
+	m1Payload := captureBody(tA.Project1ID, "org_shared", "Shared bridge start token alpha-zero-trust")
+	m1ID := createMemoryViaREST(t, env, ag3Res.APIKey, m1Payload)
+
+	mPrivPayload := captureBody(tA.Project1ID, "agent_private", "Top-secret ag3 private credential alpha-zero-trust")
 	mPrivPayload["relations"] = []map[string]any{
-		{"target_id": m1ID.String(), "type": "depends_on", "weight": 1.0},
+		{"to_memory_id": m1ID.String(), "relation_type": "depends_on", "weight": 1.0},
 	}
-	mPrivID := createMemoryViaREST(t, env, tA.Agent2Key, mPrivPayload)
+	mPrivID := createMemoryViaREST(t, env, ag3Res.APIKey, mPrivPayload)
 
-	m3Payload := captureBody(tA.Project1ID, "project_shared", "Downstream shared node behind private hop")
+	m3Payload := captureBody(tA.Project1ID, "org_shared", "Downstream shared node behind private hop")
 	m3Payload["relations"] = []map[string]any{
-		{"target_id": mPrivID.String(), "type": "depends_on", "weight": 1.0},
+		{"to_memory_id": mPrivID.String(), "relation_type": "depends_on", "weight": 1.0},
 	}
-	m3ID := createMemoryViaREST(t, env, tA.Agent2Key, m3Payload)
+	m3ID := createMemoryViaREST(t, env, ag3Res.APIKey, m3Payload)
 
 	// Also seed a foreign-tenant memory in Tenant B.
-	mForeignPayload := captureBody(tB.Project1ID, "project_shared", "Foreign tenant B secret alpha-zero-trust")
+	mForeignPayload := captureBody(tB.Project1ID, "org_shared", "Foreign tenant B secret alpha-zero-trust")
 	mForeignID := createMemoryViaREST(t, env, tB.Agent1Key, mForeignPayload)
 
 	// 1a. Explicitly requesting an unauthorized foreign project_id must return 403 Forbidden.
@@ -147,9 +176,9 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	}
 
 	// 5. ag1 attempts to capture a relation targeting unauthorized M_priv -> 404 opacity + denied audit.
-	badRelPayload := captureBody(tA.Project1ID, "project_shared", "Attempted unauthorized link")
+	badRelPayload := captureBody(tA.Project1ID, "org_shared", "Attempted unauthorized link")
 	badRelPayload["relations"] = []map[string]any{
-		{"target_id": mPrivID.String(), "type": "depends_on", "weight": 0.5},
+		{"to_memory_id": mPrivID.String(), "relation_type": "depends_on", "weight": 0.5},
 	}
 	badRelResp, _ := env.DoJSON(t, http.MethodPost, "/api/v1/memories", tA.Agent1Key, badRelPayload)
 	if badRelResp.StatusCode != http.StatusNotFound {
@@ -159,7 +188,7 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	// Verify denied audit events were persisted for ag1's unauthorized subgraph/relation attempts.
 	var deniedCount int
 	if err := pool.QueryRow(ctx,
-		`SELECT count(*) FROM audit_events WHERE tenant_id = $1 AND actor_principal_id = $2 AND decision = 'denied'`,
+		`SELECT count(*) FROM audit_events WHERE tenant_id = $1 AND principal_id = $2 AND outcome = 'denied'`,
 		tA.TenantID, tA.Agent1Princ,
 	).Scan(&deniedCount); err != nil {
 		t.Fatalf("query denied audit_events: %v", err)
@@ -168,10 +197,10 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 		t.Fatalf("expected >= 2 denied audit events for unauthorized subgraph & relation attempts, got %d", deniedCount)
 	}
 
-	// 6. task_shared permission revocation (AC-03): grant task-rev read+write to ag2 and read to ag1,
+	// 6. task_shared permission revocation (AC-03): grant task-rev read+write to ag3 and read to ag1,
 	// capture mTaskShared, confirm ag1 sees it, then revoke ag1 and verify 0% leakage.
 	for _, args := range [][]string{
-		{"task-permission", "grant", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", tA.Agent2Princ.String(), "--read", "--write"},
+		{"task-permission", "grant", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", ag3Res.Principal.ID.String(), "--read", "--write"},
 		{"task-permission", "grant", "--dsn", testpg.TestDSN(), "--api-key", tA.OrchKey, "--tenant-id", tA.TenantID.String(), "--project-id", tA.Project1ID.String(), "--task-id", "task-rev", "--principal-id", tA.Agent1Princ.String(), "--read"},
 	} {
 		if out, err := env.RunCLI(t, args...); err != nil {
@@ -180,7 +209,7 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 	}
 	taskPayload := captureBody(tA.Project1ID, "task_shared", "Revocable task secret beta-revoked")
 	taskPayload["task_id"] = "task-rev"
-	mTaskID := createMemoryViaREST(t, env, tA.Agent2Key, taskPayload)
+	mTaskID := createMemoryViaREST(t, env, ag3Res.APIKey, taskPayload)
 
 	visResp, visBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
 		"query":       "beta-revoked",

@@ -22,12 +22,13 @@
   - `CGO_ENABLED=0 go build -trimpath ./cmd/romero`: PASS.
   - `go test -count=1 -cover ./internal/... ./cmd/...`: PASS on all 18 pure-Go packages (`capture` 85.0%, `context` 93.5%, `eval` 72.6%, `feedback` 86.9%, `jobs` 83.3%, `provisioning` 91.1%, `requests` 86.7%, `retrieval` 86.1%, `graph` 93.4%, `identity` 98.2%, `memory` 87.8%, `provenance` 100.0%, `security` 100.0%, `cachel1` 80.9%, `neural` 88.6%, `cli` 91.1%, `rest` 81.7%, `cmd/romero` 33.0%); `internal/infrastructure/persistence/postgres` pure-Go unit tests (`-skip` live PG17 suite) PASS (`0.950s`).
   - `go test -c ./tests/integration` & `go test -c ./tests/security`: PASS (both binaries compile cleanly).
+  - Live PG17 (`romero-postgres` via `docker-compose.yml`, `ROMERO_TEST_DSN=postgres://romero:romero_local_secret@127.0.0.1:54329/romero?sslmode=disable`):
+    - `go test -p 1 -count=1 ./internal/infrastructure/persistence/postgres/... ./tests/integration/... ./tests/security/...`: PASS (`postgres` `1.688s`, `integration` `3.994s`, `security` `2.539s`).
 - Level 2 evaluation:
   - `go run ./cmd/romero eval --dataset tests/evaluation/golden_dataset.json`: PASS (`cases_evaluated: 2`, `ndcg_at_5: 1`, `multi_hop_recall: 1`, `obsolete_suppression_rate: 1`, `zero_trust_leakage_rate: 0`, `pass: true`).
 - Environment-blocked / not run:
   - `-race` (no `gcc` / C compiler in Windows session).
   - `golangci-lint` (not installed in environment).
-  - Live PG17 execution of `internal/infrastructure/persistence/postgres` (10 DB tests) and `tests/integration` / `tests/security` (Docker Desktop daemon unavailable; `ROMERO_TEST_DSN` unset).
 - traceability: `AC-01`..`AC-12` (`all ACs`).
 
 ## T007 — 2026-11-15 — verified
