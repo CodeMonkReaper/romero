@@ -519,6 +519,72 @@ func (s *Service) ExecuteCaptureTx(
 	return view, true, nil
 }
 
+// ExecuteSupersedeReplacementTx atomically closes oldMem as superseded and inserts a replacement
+// memory inside an existing UnitOfWork transaction (reused by T007 corrected_by_user).
+func (s *Service) ExecuteSupersedeReplacementTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	oldMem *memory.Memory,
+	cmd CaptureCommand,
+	reason string,
+) (*MemoryView, error) {
+	if oldMem == nil {
+		return nil, ErrNotFound
+	}
+	if cmd.ProjectID == nil {
+		cmd.ProjectID = oldMem.ProjectID
+	}
+	if cmd.TaskID == "" {
+		cmd.TaskID = oldMem.TaskID
+	}
+	if cmd.TopicKey == "" {
+		cmd.TopicKey = oldMem.TopicKey
+	}
+	if _, err := validateCaptureCommand(cmd); err != nil {
+		return nil, err
+	}
+	if err := auth.CanAssignEpistemic(string(cmd.EpistemicStatus)); err != nil {
+		return nil, ErrForbidden
+	}
+	if cmd.ScopeType == identity.ScopeTaskShared {
+		if _, err := s.authorizeTaskWrite(ctx, auth, cmd.ProjectID, cmd.TaskID, "record_feedback", &oldMem.ID, cmd.CorrelationID); err != nil {
+			return nil, err
+		}
+	} else if err := auth.CanWriteScope(cmd.ProjectID, cmd.ScopeType, cmd.TaskID); err != nil {
+		return nil, mapDomainWriteErr(err)
+	}
+	return s.executeSupersedeTx(ctx, reg, auth, oldMem, cmd, reason, true, s.clock())
+}
+
+func (s *Service) executeSupersedeTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	oldMem *memory.Memory,
+	captureCmd CaptureCommand,
+	reason string,
+	closeOld bool,
+	now time.Time,
+) (*MemoryView, error) {
+	newID := uuid.New()
+	if closeOld {
+		if err := s.closeAndSupersedeOldStateTx(ctx, reg, oldMem, newID, reason, now); err != nil {
+			return nil, err
+		}
+	}
+	newView, _, err := s.insertMemoryWithSourceTx(ctx, reg, auth, captureCmd, memory.StatusActive, newID, now)
+	if err != nil {
+		return nil, err
+	}
+	if closeOld {
+		if err := s.insertSupersedesRelationTx(ctx, reg, oldMem, newView.ID, newView.PrimarySourceID, reason, now); err != nil {
+			return nil, err
+		}
+	}
+	return newView, nil
+}
+
 func (s *Service) insertMemoryWithSourceTx(
 	ctx context.Context,
 	reg memory.RepositoryRegistry,
