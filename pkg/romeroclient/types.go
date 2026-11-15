@@ -159,7 +159,7 @@ type SupersedeMemoryResponse struct {
 	NewMemory *MemoryView `json:"new_memory,omitempty"`
 }
 
-// ArchiveMemoryRequest is the payload for DELETE /api/v1/memories/{id}.
+// ArchiveMemoryRequest is the payload for POST /api/v1/memories/{id}/archive.
 type ArchiveMemoryRequest struct {
 	TaskID         string `json:"task_id,omitempty"`
 	Reason         string `json:"reason,omitempty"`
@@ -173,7 +173,7 @@ type MutationResponse struct {
 	Memory    *MemoryView `json:"memory,omitempty"`
 }
 
-// FeedbackRequest is the payload for POST /api/v1/feedback.
+// FeedbackRequest is the payload for POST /api/v1/memories/feedback.
 type FeedbackRequest struct {
 	MemoryID          uuid.UUID       `json:"memory_id"`
 	TaskID            string          `json:"task_id,omitempty"`
@@ -198,7 +198,7 @@ type FeedbackResponse struct {
 	ReplacementMemoryID *uuid.UUID `json:"replacement_memory_id,omitempty"`
 }
 
-// RequestStatusResponse is returned by GET /api/v1/requests/{request_id}.
+// RequestStatusResponse is returned by GET /api/v1/memory-requests/{request_id}.
 type RequestStatusResponse struct {
 	RequestID uuid.UUID `json:"request_id"`
 	Status    string    `json:"status"`
@@ -241,7 +241,7 @@ type SearchResponse struct {
 	TotalFound   int               `json:"total_found"`
 }
 
-// BuildContextRequest is the payload for POST /api/v1/context.
+// BuildContextRequest is the payload for POST /api/v1/memories/context.
 type BuildContextRequest struct {
 	Query               string      `json:"query"`
 	ProjectIDs          []uuid.UUID `json:"project_ids,omitempty"`
