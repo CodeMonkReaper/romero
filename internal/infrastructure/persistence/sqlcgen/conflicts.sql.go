@@ -16,7 +16,7 @@ import (
 const deactivateConflictEdge = `-- name: DeactivateConflictEdge :execrows
 UPDATE memory_relations
 SET is_active = FALSE,
-    valid_until = $1
+    valid_until = GREATEST(valid_from, $1::timestamptz)
 WHERE id = $2
   AND tenant_id = $3
   AND relation_type = 'contradicts'
@@ -24,9 +24,9 @@ WHERE id = $2
 `
 
 type DeactivateConflictEdgeParams struct {
-	ValidUntil *time.Time `json:"valid_until"`
-	ConflictID uuid.UUID  `json:"conflict_id"`
-	TenantID   uuid.UUID  `json:"tenant_id"`
+	ValidUntil time.Time `json:"valid_until"`
+	ConflictID uuid.UUID `json:"conflict_id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) DeactivateConflictEdge(ctx context.Context, arg DeactivateConflictEdgeParams) (int64, error) {
@@ -40,7 +40,7 @@ func (q *Queries) DeactivateConflictEdge(ctx context.Context, arg DeactivateConf
 const deactivateConflictsByMemoryID = `-- name: DeactivateConflictsByMemoryID :many
 UPDATE memory_relations
 SET is_active = FALSE,
-    valid_until = $1
+    valid_until = GREATEST(valid_from, $1::timestamptz)
 WHERE tenant_id = $2
   AND relation_type = 'contradicts'
   AND is_active = TRUE
@@ -52,9 +52,9 @@ END)::uuid AS peer_memory_id
 `
 
 type DeactivateConflictsByMemoryIDParams struct {
-	ValidUntil *time.Time `json:"valid_until"`
-	TenantID   uuid.UUID  `json:"tenant_id"`
-	MemoryID   uuid.UUID  `json:"memory_id"`
+	ValidUntil time.Time `json:"valid_until"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	MemoryID   uuid.UUID `json:"memory_id"`
 }
 
 func (q *Queries) DeactivateConflictsByMemoryID(ctx context.Context, arg DeactivateConflictsByMemoryIDParams) ([]uuid.UUID, error) {
