@@ -1,5 +1,13 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T009 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/9
+- branch: `feat/t009-integration-security` (base `c7d4294`)
+- concurrency fix: added transaction-scoped `pg_advisory_xact_lock(hashtextextended($1, 0))` in `memoryRepo.LockActiveTopicMemory` (`internal/infrastructure/persistence/postgres/{store,opaque_requests,repositories}.go`) keyed by `topicAdvisoryLockKey` matching `idx_memories_active_topic_key` partitions so concurrent `POST /api/v1/memories` on a new or active `topic_key` never races into `23505`.
+- controls (`golang:1.27` + `golangci-lint:latest` + `pgvector/pgvector:pg17`): `gofmt -s -w` PASS, `go vet ./...` PASS, `golangci-lint run ./internal/infrastructure/persistence/postgres/... ./tests/...` (`0 issues.`), `CGO_ENABLED=1 go test -p 1 -count=1 -race -v ./internal/infrastructure/persistence/postgres/... ./tests/integration/... ./tests/security/...` PASS (11/11 postgres, 9/9 integration, 2/2 security).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `human approval: not required`). Fresh-context Tier 1 Reviewer (`321c6cb1`): `VERDICT: pass` (0 blockers, 3 nits).
+- traceability: `AC-01`–`AC-10`, `AC-T1`–`AC-T12`.
+
 ## T008 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/8
 - branch: `feat/t008-rest-server` (base `ee4efe1`)

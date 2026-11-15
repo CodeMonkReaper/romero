@@ -64,6 +64,7 @@ func (s *Store) ExecTx(ctx context.Context, fn func(memory.RepositoryRegistry) e
 	defer rollbackTx(&committed, tx)
 
 	reg := &repoRegistry{
+		tx:          tx,
 		txQueries:   s.queries.WithTx(tx),
 		poolQueries: s.queries,
 	}
@@ -124,6 +125,7 @@ func (s *Store) OpaqueRequests(leaseDuration time.Duration) *OpaqueRequestStore 
 }
 
 type repoRegistry struct {
+	tx          pgx.Tx
 	txQueries   *sqlcgen.Queries
 	poolQueries *sqlcgen.Queries
 }
@@ -133,7 +135,7 @@ func (r *repoRegistry) Sources() memory.SourceRepository {
 }
 
 func (r *repoRegistry) Memories() memory.MemoryRepository {
-	return &memoryRepo{q: r.txQueries}
+	return &memoryRepo{q: r.txQueries, tx: r.tx}
 }
 
 func (r *repoRegistry) Feedback() memory.FeedbackRepository {

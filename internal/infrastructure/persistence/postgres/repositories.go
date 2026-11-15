@@ -40,7 +40,10 @@ func (r *sourceRepo) InsertSource(ctx context.Context, src provenance.MemorySour
 	})
 }
 
-type memoryRepo struct{ q *sqlcgen.Queries }
+type memoryRepo struct {
+	q  *sqlcgen.Queries
+	tx pgx.Tx
+}
 
 func (r *memoryRepo) GetMemoryByID(ctx context.Context, tenantID, memoryID uuid.UUID) (*memory.Memory, error) {
 	if tenantID == uuid.Nil || memoryID == uuid.Nil {
@@ -93,9 +96,34 @@ func (r *memoryRepo) GetMemoryByIdempotencyKey(ctx context.Context, tenantID uui
 	})
 }
 
+func topicAdvisoryLockKey(scope identity.MemoryScopeTarget, topicKey string) string {
+	var projID, ownerID uuid.UUID
+	if scope.ProjectID != nil {
+		projID = *scope.ProjectID
+	}
+	if scope.OwnerAgentID != nil {
+		ownerID = *scope.OwnerAgentID
+	}
+	switch scope.ScopeType {
+	case identity.ScopeAgentPrivate:
+		return fmt.Sprintf("topic:%s:agent:%s:%s:%s", scope.TenantID, projID, ownerID, topicKey)
+	case identity.ScopeTaskShared:
+		return fmt.Sprintf("topic:%s:task:%s:%s:%s", scope.TenantID, projID, scope.TaskID, topicKey)
+	case identity.ScopeProjectShared:
+		return fmt.Sprintf("topic:%s:proj:%s:%s", scope.TenantID, projID, topicKey)
+	default:
+		return fmt.Sprintf("topic:%s:%s:%s", scope.TenantID, scope.ScopeType, topicKey)
+	}
+}
+
 func (r *memoryRepo) LockActiveTopicMemory(ctx context.Context, scope identity.MemoryScopeTarget, topicKey string) (*memory.Memory, error) {
 	if scope.TenantID == uuid.Nil || topicKey == "" {
 		return nil, memory.ErrInvalidIdentifier
+	}
+	if r.tx != nil {
+		if _, err := r.tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, topicAdvisoryLockKey(scope, topicKey)); err != nil {
+			return nil, err
+		}
 	}
 	row, err := r.q.LockActiveTopicMemory(ctx, sqlcgen.LockActiveTopicMemoryParams{
 		TenantID:     scope.TenantID,
