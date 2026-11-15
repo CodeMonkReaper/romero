@@ -12,6 +12,102 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimPendingMemoryJobs = `-- name: ClaimPendingMemoryJobs :many
+WITH claimed AS (
+    SELECT mj.id
+    FROM memory_jobs mj
+    WHERE mj.job_type = $2
+      AND mj.status IN ('pending', 'failed')
+      AND mj.scheduled_at <= $1
+      AND mj.attempts < mj.max_attempts
+    ORDER BY mj.priority DESC, mj.scheduled_at ASC, mj.created_at ASC
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE memory_jobs j
+SET status = 'processing',
+    attempts = j.attempts + 1,
+    locked_at = $1
+FROM claimed
+WHERE j.id = claimed.id
+RETURNING
+    j.id,
+    j.tenant_id,
+    j.project_id,
+    j.memory_id,
+    j.job_type,
+    j.priority,
+    j.status,
+    j.payload,
+    j.attempts,
+    j.max_attempts,
+    j.last_error,
+    j.scheduled_at,
+    j.locked_at,
+    j.completed_at,
+    j.created_at
+`
+
+type ClaimPendingMemoryJobsParams struct {
+	NowTs      *time.Time `json:"now_ts"`
+	JobType    string     `json:"job_type"`
+	BatchLimit int32      `json:"batch_limit"`
+}
+
+func (q *Queries) ClaimPendingMemoryJobs(ctx context.Context, arg ClaimPendingMemoryJobsParams) ([]MemoryJob, error) {
+	rows, err := q.db.Query(ctx, claimPendingMemoryJobs, arg.NowTs, arg.JobType, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MemoryJob{}
+	for rows.Next() {
+		var i MemoryJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.MemoryID,
+			&i.JobType,
+			&i.Priority,
+			&i.Status,
+			&i.Payload,
+			&i.Attempts,
+			&i.MaxAttempts,
+			&i.LastError,
+			&i.ScheduledAt,
+			&i.LockedAt,
+			&i.CompletedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completeMemoryJob = `-- name: CompleteMemoryJob :exec
+UPDATE memory_jobs
+SET status = 'completed',
+    completed_at = $1,
+    locked_at = NULL
+WHERE id = $2
+`
+
+type CompleteMemoryJobParams struct {
+	CompletedAt *time.Time `json:"completed_at"`
+	ID          uuid.UUID  `json:"id"`
+}
+
+func (q *Queries) CompleteMemoryJob(ctx context.Context, arg CompleteMemoryJobParams) error {
+	_, err := q.db.Exec(ctx, completeMemoryJob, arg.CompletedAt, arg.ID)
+	return err
+}
+
 const enqueueMemoryJob = `-- name: EnqueueMemoryJob :exec
 INSERT INTO memory_jobs (
     id,
@@ -83,6 +179,32 @@ func (q *Queries) EnqueueMemoryJob(ctx context.Context, arg EnqueueMemoryJobPara
 		arg.LockedAt,
 		arg.CompletedAt,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const failMemoryJob = `-- name: FailMemoryJob :exec
+UPDATE memory_jobs
+SET status = CASE WHEN $1::boolean THEN 'dead_letter'::job_status_enum ELSE 'failed'::job_status_enum END,
+    last_error = NULLIF($2::text, ''),
+    scheduled_at = $3,
+    locked_at = NULL
+WHERE id = $4
+`
+
+type FailMemoryJobParams struct {
+	DeadLetter      bool      `json:"dead_letter"`
+	LastError       string    `json:"last_error"`
+	NextScheduledAt time.Time `json:"next_scheduled_at"`
+	ID              uuid.UUID `json:"id"`
+}
+
+func (q *Queries) FailMemoryJob(ctx context.Context, arg FailMemoryJobParams) error {
+	_, err := q.db.Exec(ctx, failMemoryJob,
+		arg.DeadLetter,
+		arg.LastError,
+		arg.NextScheduledAt,
+		arg.ID,
 	)
 	return err
 }

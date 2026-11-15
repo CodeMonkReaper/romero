@@ -12,15 +12,20 @@ import (
 
 type Querier interface {
 	ClaimNextOpaqueRequest(ctx context.Context, arg ClaimNextOpaqueRequestParams) (ClaimNextOpaqueRequestRow, error)
+	ClaimPendingMemoryJobs(ctx context.Context, arg ClaimPendingMemoryJobsParams) ([]MemoryJob, error)
 	CloseMemoryVersionValidity(ctx context.Context, arg CloseMemoryVersionValidityParams) (int64, error)
+	CompleteMemoryJob(ctx context.Context, arg CompleteMemoryJobParams) error
 	CompleteOpaqueRequest(ctx context.Context, arg CompleteOpaqueRequestParams) (int64, error)
 	CountTenantProjectsByIDs(ctx context.Context, arg CountTenantProjectsByIDsParams) (int64, error)
 	EnqueueMemoryJob(ctx context.Context, arg EnqueueMemoryJobParams) error
 	EvaluateTaskAccessSnapshot(ctx context.Context, arg EvaluateTaskAccessSnapshotParams) (EvaluateTaskAccessSnapshotRow, error)
+	FailMemoryJob(ctx context.Context, arg FailMemoryJobParams) error
 	GetAgentByExternalKey(ctx context.Context, arg GetAgentByExternalKeyParams) (Agent, error)
 	GetAgentByID(ctx context.Context, arg GetAgentByIDParams) (Agent, error)
+	GetMemoriesByIDs(ctx context.Context, arg GetMemoriesByIDsParams) ([]GetMemoriesByIDsRow, error)
 	GetMemoryByID(ctx context.Context, arg GetMemoryByIDParams) (GetMemoryByIDRow, error)
 	GetMemoryByIdempotencyKey(ctx context.Context, arg GetMemoryByIdempotencyKeyParams) (GetMemoryByIdempotencyKeyRow, error)
+	GetMemoryEmbeddingsByIDs(ctx context.Context, arg GetMemoryEmbeddingsByIDsParams) ([]GetMemoryEmbeddingsByIDsRow, error)
 	GetMemoryVersionPointInTime(ctx context.Context, arg GetMemoryVersionPointInTimeParams) (MemoryVersion, error)
 	GetOpaqueRequestByID(ctx context.Context, arg GetOpaqueRequestByIDParams) (OpaqueMemoryRequest, error)
 	GetOpaqueRequestByIdempotencyKey(ctx context.Context, arg GetOpaqueRequestByIdempotencyKeyParams) (OpaqueMemoryRequest, error)
@@ -43,13 +48,21 @@ type Querier interface {
 	InsertTenant(ctx context.Context, arg InsertTenantParams) (Tenant, error)
 	ListActiveRelationsByMemoryID(ctx context.Context, arg ListActiveRelationsByMemoryIDParams) ([]MemoryRelation, error)
 	ListVersionsByMemoryID(ctx context.Context, memoryID uuid.UUID) ([]MemoryVersion, error)
+	LoadProjectGraphEmbeddings(ctx context.Context, arg LoadProjectGraphEmbeddingsParams) ([]LoadProjectGraphEmbeddingsRow, error)
+	LoadProjectGraphMemories(ctx context.Context, arg LoadProjectGraphMemoriesParams) ([]LoadProjectGraphMemoriesRow, error)
+	LoadProjectGraphRelations(ctx context.Context, arg LoadProjectGraphRelationsParams) ([]MemoryRelation, error)
 	LockActiveTopicMemory(ctx context.Context, arg LockActiveTopicMemoryParams) (LockActiveTopicMemoryRow, error)
 	LookupPrincipalsByPrefix(ctx context.Context, apiKeyPrefix string) ([]LookupPrincipalsByPrefixRow, error)
 	MarkOpaqueRequestFailedPermanent(ctx context.Context, arg MarkOpaqueRequestFailedPermanentParams) (int64, error)
 	PurgeTerminalOpaqueRequests(ctx context.Context, retentionSeconds float64) (int64, error)
 	RenewOpaqueRequestLease(ctx context.Context, arg RenewOpaqueRequestLeaseParams) (int64, error)
 	ScheduleOpaqueRequestRetry(ctx context.Context, arg ScheduleOpaqueRequestRetryParams) (int64, error)
+	SearchMemoriesByFTS(ctx context.Context, arg SearchMemoriesByFTSParams) ([]uuid.UUID, error)
+	SearchMemoriesByTrigram(ctx context.Context, arg SearchMemoriesByTrigramParams) ([]uuid.UUID, error)
+	SearchMemoriesByVector(ctx context.Context, arg SearchMemoriesByVectorParams) ([]uuid.UUID, error)
+	TraverseCausalSubgraph(ctx context.Context, arg TraverseCausalSubgraphParams) ([]TraverseCausalSubgraphRow, error)
 	UpdateMemoryState(ctx context.Context, arg UpdateMemoryStateParams) (int64, error)
+	UpsertMemoryEmbedding(ctx context.Context, arg UpsertMemoryEmbeddingParams) (int64, error)
 	UpsertTaskPermission(ctx context.Context, arg UpsertTaskPermissionParams) (TaskPermission, error)
 }
 
