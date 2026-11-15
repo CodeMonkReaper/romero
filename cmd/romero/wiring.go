@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,12 +16,17 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/romero-project/romero/internal/application/capture"
+	contextbuilder "github.com/romero-project/romero/internal/application/context"
+	"github.com/romero-project/romero/internal/application/eval"
 	"github.com/romero-project/romero/internal/application/feedback"
+	"github.com/romero-project/romero/internal/application/jobs"
 	"github.com/romero-project/romero/internal/application/provisioning"
 	"github.com/romero-project/romero/internal/application/requests"
 	"github.com/romero-project/romero/internal/application/retrieval"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
+	"github.com/romero-project/romero/internal/infrastructure/cachel1"
+	"github.com/romero-project/romero/internal/infrastructure/neural"
 	"github.com/romero-project/romero/internal/infrastructure/persistence/postgres"
 	"github.com/romero-project/romero/internal/interfaces/cli"
 	"github.com/romero-project/romero/internal/interfaces/rest"
@@ -31,6 +38,7 @@ func defaultDependencies() cli.Dependencies {
 		Migrator:        gooseMigrator{},
 		OpenProvisioner: openPostgresProvisioner,
 		Serve:           servePostgresServer,
+		Eval:            eval.RunDataset,
 	}
 }
 
@@ -311,18 +319,35 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 	taskPerms := store.TaskPermissions()
 	opaqueStore := store.OpaqueRequests(60 * time.Second)
 
+	bgeURL := strings.TrimSpace(os.Getenv("ROMERO_BGE_M3_URL"))
+	bgeClient := neural.NewBGEM3Client(neural.BGEM3Config{
+		BaseURL: bgeURL,
+		Enabled: bgeURL != "",
+	})
+	l1Graph := cachel1.NewCognitiveGraph(store.Search())
+
 	capSvc, err := capture.NewService(store, audit, pgCaptureAccess{r: taskPerms}, pgCaptureOpaque{o: opaqueStore}, nil)
 	if err != nil {
 		return err
 	}
+	capSvc.SetGraphNotifier(l1Graph)
+
 	retSvc, err := retrieval.NewService(store, audit, pgRetrievalAccess{r: taskPerms}, pgOpaqueStatus{o: opaqueStore}, nil)
 	if err != nil {
 		return err
 	}
+	retSvc.SetHybridDeps(store.Search(), bgeClient, l1Graph)
+
+	ctxSvc, err := contextbuilder.NewService(retSvc, audit, nil)
+	if err != nil {
+		return err
+	}
+
 	fbSvc, err := feedback.NewService(store, audit, pgFeedbackAccess{r: taskPerms}, pgFeedbackOpaque{o: opaqueStore}, capSvc, nil)
 	if err != nil {
 		return err
 	}
+	fbSvc.SetGraphNotifier(l1Graph)
 
 	worker, err := requests.NewWorker(
 		pgWorkerQueue{o: opaqueStore},
@@ -334,12 +359,16 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		return err
 	}
 
+	embWorker := jobs.NewEmbeddingWorker(store.JobQueue(), store.Search(), store.Embeddings(), bgeClient, l1Graph, jobs.EmbeddingWorkerConfig{}, nil)
+
 	handler, _, err := rest.NewRouter(rest.RouterDeps{
 		Auth:      auth,
 		Capture:   capSvc,
 		Retrieval: retSvc,
+		Context:   ctxSvc,
 		Feedback:  fbSvc,
 		DB:        pool,
+		L1Stats:   l1Graph,
 		Version:   cli.Version,
 	})
 	if err != nil {
@@ -352,6 +381,11 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 	go func() {
 		defer close(workerDone)
 		_ = worker.Run(workerCtx)
+	}()
+	embDone := make(chan struct{})
+	go func() {
+		defer close(embDone)
+		embWorker.Run(workerCtx)
 	}()
 
 	srv := &http.Server{
@@ -372,6 +406,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 	case sErr := <-errCh:
 		cancelWorker()
 		<-workerDone
+		<-embDone
 		return sErr
 	case <-ctx.Done():
 		shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
@@ -379,6 +414,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		_ = srv.Shutdown(shutCtx)
 		cancelWorker()
 		<-workerDone
+		<-embDone
 		return nil
 	}
 }

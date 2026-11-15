@@ -11,11 +11,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/romero-project/romero/internal/application/capture"
+	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/feedback"
 	"github.com/romero-project/romero/internal/application/retrieval"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/domain/provenance"
+	"github.com/romero-project/romero/internal/infrastructure/cachel1"
 )
 
 // CaptureService defines capture operations exposed by the REST adapter.
@@ -26,10 +28,22 @@ type CaptureService interface {
 	ArchiveMemory(ctx context.Context, auth identity.AuthContext, memoryID uuid.UUID, cmd capture.ArchiveCommand) (*capture.MutationResult, error)
 }
 
-// RetrievalService defines read and opaque request status operations exposed by the REST adapter.
+// RetrievalService defines read, hybrid search, subgraph, and opaque request status operations exposed by the REST adapter.
 type RetrievalService interface {
 	GetMemory(ctx context.Context, auth identity.AuthContext, query retrieval.GetMemoryQuery) (*retrieval.MemoryDetail, error)
 	GetRequestStatus(ctx context.Context, auth identity.AuthContext, requestID uuid.UUID, correlationID string) (*retrieval.RequestStatus, error)
+	SearchMemories(ctx context.Context, auth identity.AuthContext, query retrieval.SearchQuery) (*retrieval.SearchResult, error)
+	GetSubgraph(ctx context.Context, auth identity.AuthContext, query retrieval.SubgraphQuery) (*retrieval.SubgraphResult, error)
+}
+
+// ContextService defines bounded submodular context packaging exposed by the REST adapter.
+type ContextService interface {
+	BuildContext(ctx context.Context, auth identity.AuthContext, req contextbuilder.BuildContextRequest) (*contextbuilder.BuildContextResult, error)
+}
+
+// L1StatsProvider exposes in-RAM Cognitive Graph metrics for system/status.
+type L1StatsProvider interface {
+	Stats() cachel1.GraphStats
 }
 
 // FeedbackService defines empirical feedback operations exposed by the REST adapter.
@@ -47,8 +61,10 @@ type RouterDeps struct {
 	Auth      Authenticator
 	Capture   CaptureService
 	Retrieval RetrievalService
+	Context   ContextService
 	Feedback  FeedbackService
 	DB        StatusChecker
+	L1Stats   L1StatsProvider
 	Version   string
 }
 
@@ -77,6 +93,13 @@ type captureMemoryInput struct {
 	Body captureBody
 }
 
+type explicitRelationBody struct {
+	ToMemoryID   uuid.UUID           `json:"to_memory_id"`
+	RelationType memory.RelationType `json:"relation_type"`
+	Weight       float32             `json:"weight,omitempty"`
+	Notes        string              `json:"notes,omitempty"`
+}
+
 type captureBody struct {
 	ProjectID        *uuid.UUID             `json:"project_id,omitempty"`
 	TaskID           string                 `json:"task_id,omitempty"`
@@ -94,9 +117,22 @@ type captureBody struct {
 	URI              string                 `json:"uri,omitempty"`
 	RawExcerptHash   string                 `json:"raw_excerpt_hash,omitempty"`
 	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
+	Relations        []explicitRelationBody `json:"relations,omitempty"`
 }
 
 func (b captureBody) toCommand(corrID string) capture.CaptureCommand {
+	var rels []memory.ExplicitRelationInput
+	if len(b.Relations) > 0 {
+		rels = make([]memory.ExplicitRelationInput, 0, len(b.Relations))
+		for _, r := range b.Relations {
+			rels = append(rels, memory.ExplicitRelationInput{
+				ToMemoryID:   r.ToMemoryID,
+				RelationType: r.RelationType,
+				Weight:       r.Weight,
+				Notes:        r.Notes,
+			})
+		}
+	}
 	return capture.CaptureCommand{
 		ProjectID:        b.ProjectID,
 		TaskID:           b.TaskID,
@@ -114,6 +150,7 @@ func (b captureBody) toCommand(corrID string) capture.CaptureCommand {
 		URI:              b.URI,
 		RawExcerptHash:   b.RawExcerptHash,
 		IdempotencyKey:   b.IdempotencyKey,
+		Relations:        rels,
 		CorrelationID:    corrID,
 	}
 }
@@ -230,12 +267,56 @@ type getRequestStatusOutput struct {
 	}
 }
 
+type searchMemoriesInput struct {
+	Body struct {
+		Query               string               `json:"query"`
+		ProjectIDs          []uuid.UUID          `json:"project_ids,omitempty"`
+		Scopes              []identity.ScopeType `json:"scopes,omitempty"`
+		TaskID              string               `json:"task_id,omitempty"`
+		Limit               int                  `json:"limit,omitempty"`
+		Hops                int                  `json:"hops,omitempty"`
+		IncludeSuperseded   bool                 `json:"include_superseded,omitempty"`
+		IncludeConsolidated bool                 `json:"include_consolidated,omitempty"`
+	}
+}
+
+type searchMemoriesOutput struct {
+	Body retrieval.SearchResult
+}
+
+type buildContextInput struct {
+	Body struct {
+		Query               string               `json:"query"`
+		ProjectIDs          []uuid.UUID          `json:"project_ids,omitempty"`
+		Scopes              []identity.ScopeType `json:"scopes,omitempty"`
+		TaskID              string               `json:"task_id,omitempty"`
+		MaxTokens           int                  `json:"max_tokens"`
+		Hops                int                  `json:"hops,omitempty"`
+		IncludeSuperseded   bool                 `json:"include_superseded,omitempty"`
+		IncludeConsolidated bool                 `json:"include_consolidated,omitempty"`
+	}
+}
+
+type buildContextOutput struct {
+	Body contextbuilder.BuildContextResult
+}
+
+type getSubgraphInput struct {
+	ID   string `path:"id"`
+	Hops int    `query:"hops"`
+}
+
+type getSubgraphOutput struct {
+	Body retrieval.SubgraphResult
+}
+
 type systemStatusOutput struct {
 	Status int
 	Body   struct {
-		Status   string `json:"status"`
-		Version  string `json:"version"`
-		Database string `json:"database"`
+		Status   string              `json:"status"`
+		Version  string              `json:"version"`
+		Database string              `json:"database"`
+		L1Graph  *cachel1.GraphStats `json:"l1_graph,omitempty"`
 	}
 }
 
@@ -475,10 +556,89 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "search-memories",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/memories/search",
+		Summary:     "Execute Zero-Trust tri-modal hybrid search with spreading activation",
+	}, func(ctx context.Context, in *searchMemoriesInput) (*searchMemoriesOutput, error) {
+		auth, err := callerFromCtx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		res, err := deps.Retrieval.SearchMemories(ctx, auth, retrieval.SearchQuery{
+			Query:               in.Body.Query,
+			ProjectIDs:          in.Body.ProjectIDs,
+			Scopes:              in.Body.Scopes,
+			TaskID:              in.Body.TaskID,
+			Limit:               in.Body.Limit,
+			Hops:                in.Body.Hops,
+			IncludeSuperseded:   in.Body.IncludeSuperseded,
+			IncludeConsolidated: in.Body.IncludeConsolidated,
+		})
+		if err != nil {
+			return nil, mapAppError(err)
+		}
+		return &searchMemoriesOutput{Body: *res}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "build-context",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/memories/context",
+		Summary:     "Build a token-bounded submodular XML context package",
+	}, func(ctx context.Context, in *buildContextInput) (*buildContextOutput, error) {
+		auth, err := callerFromCtx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if deps.Context == nil {
+			return nil, huma.Error503ServiceUnavailable("context service unavailable")
+		}
+		res, err := deps.Context.BuildContext(ctx, auth, contextbuilder.BuildContextRequest{
+			Query:               in.Body.Query,
+			ProjectIDs:          in.Body.ProjectIDs,
+			Scopes:              in.Body.Scopes,
+			TaskID:              in.Body.TaskID,
+			MaxTokens:           in.Body.MaxTokens,
+			Hops:                in.Body.Hops,
+			IncludeSuperseded:   in.Body.IncludeSuperseded,
+			IncludeConsolidated: in.Body.IncludeConsolidated,
+		})
+		if err != nil {
+			return nil, mapAppError(err)
+		}
+		return &buildContextOutput{Body: *res}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-memory-subgraph",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/memories/{id}/subgraph",
+		Summary:     "Explore authorized 1-3 hop causal neighborhood around a memory",
+	}, func(ctx context.Context, in *getSubgraphInput) (*getSubgraphOutput, error) {
+		auth, err := callerFromCtx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("invalid memory id")
+		}
+		res, err := deps.Retrieval.GetSubgraph(ctx, auth, retrieval.SubgraphQuery{
+			MemoryID: id,
+			Hops:     in.Hops,
+		})
+		if err != nil {
+			return nil, mapAppError(err)
+		}
+		return &getSubgraphOutput{Body: *res}, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-system-status",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/system/status",
-		Summary:     "Check system version and database connectivity",
+		Summary:     "Check system version, database connectivity, and L1 Cognitive Graph metrics",
 	}, func(ctx context.Context, _ *struct{}) (*systemStatusOutput, error) {
 		out := &systemStatusOutput{Status: http.StatusOK}
 		out.Body.Version = deps.Version
@@ -488,6 +648,10 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 			if err := deps.DB.Ping(ctx); err != nil {
 				return nil, huma.Error503ServiceUnavailable("database unavailable")
 			}
+		}
+		if deps.L1Stats != nil {
+			st := deps.L1Stats.Stats()
+			out.Body.L1Graph = &st
 		}
 		return out, nil
 	})

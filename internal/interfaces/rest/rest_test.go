@@ -13,10 +13,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/romero-project/romero/internal/application/capture"
+	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/feedback"
 	"github.com/romero-project/romero/internal/application/retrieval"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
+	"github.com/romero-project/romero/internal/infrastructure/cachel1"
 	"github.com/romero-project/romero/internal/interfaces/rest"
 )
 
@@ -63,6 +65,42 @@ func (f fakeRetrievalSvc) GetMemory(_ context.Context, _ identity.AuthContext, _
 }
 func (f fakeRetrievalSvc) GetRequestStatus(_ context.Context, _ identity.AuthContext, _ uuid.UUID, _ string) (*retrieval.RequestStatus, error) {
 	return f.status, f.err
+}
+func (f fakeRetrievalSvc) SearchMemories(_ context.Context, _ identity.AuthContext, _ retrieval.SearchQuery) (*retrieval.SearchResult, error) {
+	return &retrieval.SearchResult{
+		Candidates: []retrieval.SearchCandidate{{ID: uuid.New(), Summary: "hit"}},
+		TotalFound: 1,
+	}, f.err
+}
+func (f fakeRetrievalSvc) GetSubgraph(_ context.Context, _ identity.AuthContext, q retrieval.SubgraphQuery) (*retrieval.SubgraphResult, error) {
+	return &retrieval.SubgraphResult{
+		RootMemoryID: q.MemoryID,
+		Nodes:        []retrieval.SubgraphNode{{ID: q.MemoryID, Summary: "root"}},
+	}, f.err
+}
+
+type fakeContextSvc struct {
+	res *contextbuilder.BuildContextResult
+	err error
+}
+
+func (f fakeContextSvc) BuildContext(_ context.Context, _ identity.AuthContext, req contextbuilder.BuildContextRequest) (*contextbuilder.BuildContextResult, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.res != nil {
+		return f.res, nil
+	}
+	return &contextbuilder.BuildContextResult{
+		MaxTokens:   req.MaxTokens,
+		CombinedXML: `<romero_memory untrusted_content="true">ok</romero_memory>`,
+	}, nil
+}
+
+type fakeL1Stats struct{}
+
+func (fakeL1Stats) Stats() cachel1.GraphStats {
+	return cachel1.GraphStats{Enabled: true, NodesCount: 3, EdgesCount: 2, EmbeddingsCount: 3}
 }
 
 type fakeFeedbackSvc struct {
@@ -324,5 +362,73 @@ func TestREST_AllRoutesAndEdgeCases(t *testing.T) {
 	// GET /system/status with DB error -> 503
 	if rec := doReq(http.MethodGet, "/api/v1/system/status", nil); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when DB ping fails, got %d", rec.Code)
+	}
+}
+
+func TestREST_Phase02HybridContextSubgraphAndRelations(t *testing.T) {
+	memID := uuid.New()
+	h, _, err := rest.NewRouter(rest.RouterDeps{
+		Auth:      fakeAuth{auth: testCaller()},
+		Capture:   fakeCaptureSvc{res: &capture.CaptureResult{Created: true, Memory: &capture.MemoryView{ID: memID}}},
+		Retrieval: fakeRetrievalSvc{},
+		Context:   fakeContextSvc{},
+		Feedback:  fakeFeedbackSvc{},
+		DB:        fakeDB{},
+		L1Stats:   fakeL1Stats{},
+		Version:   "v0.2.0",
+	})
+	if err != nil {
+		t.Fatalf("NewRouter failed: %v", err)
+	}
+
+	doReq := func(method, path string, body any) *httptest.ResponseRecorder {
+		var rBody *bytes.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rBody = bytes.NewReader(b)
+		} else {
+			rBody = bytes.NewReader(nil)
+		}
+		req := httptest.NewRequest(method, path, rBody)
+		req.Header.Set("Authorization", "Bearer valid-key")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// POST /memories with explicit relations -> 201
+	if rec := doReq(http.MethodPost, "/api/v1/memories", map[string]any{
+		"type": "semantic", "scope_type": "project_shared", "summary": "s", "content": "c",
+		"epistemic_status": "observed", "importance": 0.7, "source_type": "agent_execution", "external_source_id": "e1",
+		"relations": []map[string]any{{"to_memory_id": uuid.New().String(), "relation_type": "depends_on"}},
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 capture with relations, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// POST /memories/search -> 200
+	if rec := doReq(http.MethodPost, "/api/v1/memories/search", map[string]any{"query": "jwt", "limit": 5, "hops": 2}); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 search, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// POST /memories/context -> 200
+	if rec := doReq(http.MethodPost, "/api/v1/memories/context", map[string]any{"query": "jwt", "max_tokens": 512, "hops": 2}); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 context, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// GET /memories/{id}/subgraph?hops=2 -> 200 & bad id -> 422
+	if rec := doReq(http.MethodGet, "/api/v1/memories/"+memID.String()+"/subgraph?hops=2", nil); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 subgraph, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(http.MethodGet, "/api/v1/memories/bad-id/subgraph", nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 bad subgraph id, got %d", rec.Code)
+	}
+
+	// GET /system/status includes l1_graph metrics
+	rec := doReq(http.MethodGet, "/api/v1/system/status", nil)
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"l1_graph"`)) {
+		t.Fatalf("expected 200 with l1_graph metrics, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
