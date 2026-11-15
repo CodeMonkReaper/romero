@@ -82,6 +82,9 @@ type Service struct {
 	audit        memory.AuditLogger
 	access       TaskAccessChecker
 	opaqueStatus OpaqueStatusReader
+	search       memory.SearchRepository
+	embedder     memory.EmbeddingProvider
+	graphCache   GraphProjector
 	clock        func() time.Time
 }
 
