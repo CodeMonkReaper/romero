@@ -33,12 +33,14 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | :--- | :--- |
 | Spec — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/specs/phase-01-foundation.md` |
 | Enmienda — autorización explícita por tarea | [Contrato](sdd/specs/phase-01-task-authorization-draft.md) · [plan](sdd/plans/phase-01-task-authorization-draft.md) |
+| Spec — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/specs/phase-02-hybrid-retrieval.md` |
 
 ## Planes Técnicos (`sdd/plans/`)
 
 | Documento | Ruta |
 | :--- | :--- |
 | Plan — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/plans/phase-01-foundation.md` |
+| Plan — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/plans/phase-02-hybrid-retrieval.md` |
 
 ## Análisis de Consistencia (`sdd/analysis/`)
 
@@ -46,12 +48,14 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | :--- | :--- |
 | Analysis — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/analysis/phase-01-foundation.md` |
 | Analysis — autorización por tarea y solicitudes opacas | [Informe 2026-11-14](sdd/analysis/phase-01-task-authorization-2026-11-14.md) |
+| Analysis — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/analysis/phase-02-hybrid-retrieval.md` |
 
 ## Progreso de Implementación (`sdd/progress/`)
 
 | Documento | Ruta |
 | :--- | :--- |
 | Progress Ledger — Phase 01 Foundation | `02-DOCS/wiki/sdd/progress/phase-01-foundation.md` |
+| Progress Ledger — Phase 02 Hybrid Retrieval | `02-DOCS/wiki/sdd/progress/phase-02-hybrid-retrieval.md` |
 
 ## Verificación de T001
 

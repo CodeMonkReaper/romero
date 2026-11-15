@@ -1,5 +1,37 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-15 — Plan técnico `phase-02-hybrid-retrieval` (`02-DOCS/wiki/sdd/plans/phase-02-hybrid-retrieval.md`)
+
+- **Tarea / Fase:** `plan` (`phase-02-hybrid-retrieval`)
+- **Contexto:** Diseño de la arquitectura, contratos entre componentes, flujo de datos, estrategia de pruebas por criterio (`AC-01`..`AC-12`), secuenciación y mitigación de riesgos para la Fase 02 (Perfil `Balanced`).
+- **Opciones consideradas:**
+  1. Ejecutar *Spreading Activation* sobre el grafo completo en RAM y filtrar permisos al construir la respuesta final, exigiendo `INNER JOIN` con `memory_embeddings` en las consultas de búsqueda.
+  2. Proyectar en la Caché Cognitiva L1 un subgrafo podado por permisos Zero-Trust (`AuthContext` + `task_permissions` vigentes) *antes* de entregar la lista de adyacencia al motor matemático puro (`internal/domain/graph`), ejecutar en paralelo (`errgroup`) la vectorización `BGE-M3` y la consulta tri-modal (`pg_trgm`, `fts_doc`, `halfvec` HNSW con `SET LOCAL hnsw.iterative_scan = relaxed_order`), sincronizar la Caché L1 *write-through* tras cada mutación ACID y degradar limpiamente a $\text{RRF}$ léxico/exacto + diversidad Jaccard cuando falten vectores (`degraded_mode = true`).
+- **Decisión:** Opción 2.
+- **Por qué:** Garantiza $0.00\%$ de fuga indirecta entre scopes a través de caminos multi-salto (`AC-03`), mantiene coherencia inmediata tras supersesiones/archivados (`AC-06`), preserva el presupuesto de latencia $p_{95} < 18\text{ ms}$ (Principio 17) y asegura disponibilidad inmediata tras captura incluso antes de que finalice el trabajo asíncrono `embed_and_nli` (`AC-08`, `AC-09`), sin requerir migraciones destructivas sobre el esquema SQL de Fase 01.
+
+## 2026-11-15 — Clarificación (`clarify`) de `phase-02-hybrid-retrieval`
+
+- **Tarea / Fase:** `clarify` (`phase-02-hybrid-retrieval`)
+- **Contexto:** Cierre de brechas de la especificación `02-DOCS/wiki/sdd/specs/phase-02-hybrid-retrieval.md` tras recorrer la lista de verificación de `clarify` sobre las cuatro preguntas ASDD y los límites fuera de alcance.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Declaración de aristas causales explícitas en `CaptureMemory` (`AC-11`):** En lugar de añadir un 14.º endpoint REST fuera del catálogo canónico (§14.1), `CaptureMemory` (`POST /api/v1/memories`) acepta un campo opcional `relations` (`depends_on`, `caused_by`, `supports`, `derived_from`, `related_to`) validando visibilidad de lectura Zero-Trust sobre cada `to_memory_id` (`404 Not Found` opaco auditado si no existe o es ajeno; `422` si usa tipos reservados `supersedes`/`contradicts`).
+  2. **Lecturas puras sin bloqueo sobre `memories` (`AC-12`):** `SearchMemories`, `BuildContext` y `GetSubgraph` no mutan `access_count` ni `last_accessed_at` (escriben únicamente en `audit_events`); el incremento de uso permanece en `RecordFeedback` (`retrieved` / `used_in_context`).
+  3. **Validación de las 4 suposiciones tomadas:** Se confirman (a) los rangos y defaults de `limit` ($1..100$, def $20$), `hops` ($0..3$ / $1..3$, def $2$) y `max_tokens` ($64..32768$, def $4000$), (b) la expansión automática de `scopes` autorizados cuando se omiten (+ `task_shared` si incluye `task_id` legible), (c) la similitud de Jaccard sobre etiquetas/entidades/resumen cuando `degraded_mode = true`, y (d) el recorrido bidireccional sobre aristas vigentes visibles con desempate determinista (`observed_at DESC, id ASC`).
+- **Por qué:** Elimina brechas de creación de relaciones causales y contención de bloqueos en lecturas concurrentes sin inflar la superficie REST, dejando `phase-02-hybrid-retrieval.md` en estado `clarified` lista para `plan`.
+
+## 2026-11-15 — Especificación funcional `phase-02-hybrid-retrieval` (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto)
+
+- **Tarea / Fase:** `specify` (`phase-02-hybrid-retrieval`)
+- **Contexto:** Definición del contrato funcional (QUÉ y POR QUÉ) para la Fase 02 de ROMERO (Perfil `Balanced`), resolviendo 5 decisiones de frontera con el usuario antes de redactar `02-DOCS/wiki/sdd/specs/phase-02-hybrid-retrieval.md`.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Modo de ejecución ASDD:** Flujo con aprobación por fase (*gated*: revisión humana en `spec` -> `clarify` -> `plan` -> `tasks` -> `implement`).
+  2. **Alcance funcional de Fase 02:** Incluir `SearchMemories`, `BuildContext` y `GetSubgraph` ($1\text{–}3$ saltos) junto con el procesamiento asíncrono priorizado de representaciones vectoriales; diferir el detector NLI de contradicciones (`mDeBERTa-v3`, `ListConflicts`, `ReviewConflict`) y el Cross-Encoder (`bge-reranker-v2-m3`) a la Fase 03.
+  3. **Degradación elegante sin vector disponible (`degraded_mode`):** Cuando un recuerdo recién capturado aún tiene su vectorización pendiente en cola o el proveedor de embeddings no está disponible (ej. perfil `Lite` o caída local), `SearchMemories` y `BuildContext` responden sin caer usando coincidencia exacta, léxica y grafo causal, calculan diversidad sobre metadatos/términos e informan `degraded_mode = true`.
+  4. **Aislamiento Zero-Trust durante propagación multi-salto:** Poda estricta pre-propagación: ningún nodo ni arista fuera del `AuthContext` y `task_permissions` vigentes del solicitante recibe ni transmite energía, ni se contabiliza en `relations_count` o `GetSubgraph` ($0.00\%$ de fuga directa e indirecta).
+  5. **Elegibilidad de estados del ciclo de vida:** Por defecto solo participan recuerdos vigentes en estado `active` y `conflicted` (con penalización de estado en `conflicted` y bandera de alerta de contradicción); `superseded` y `consolidated` solo aparecen con flag explícito en `SearchMemories`; `archived` y `rejected` quedan siempre excluidos.
+- **Por qué:** Cierra el alcance del Perfil `Balanced` manteniendo disponibilidad continua ante la naturaleza asíncrona de la cola de vectorización y blindando el aislamiento Zero-Trust a través de caminos multi-salto.
+
 ## 2026-11-14 — Correcciones verificadas de T001/T002
 
 El usuario autorizó corregir directamente en main el desbordamiento tras sanitizar, la representación persistida de permisos y el cierre de trazabilidad. Seguimiento: Issue #16. El límite se comprueba antes y después de clean; se rechaza el exceso, sin truncar. La migración nueva `00002_principal_authorization.sql` añade `is_admin=false`, ámbitos vacíos por defecto y una restricción de nombres de ámbito válidos sin elementos NULL. No se modifica la migración T001 entregada ni se transforma read/write en permisos distintos. Datos previos incompatibles abortan la migración transaccional para revisión del operador. T004 usará el siguiente número libre para task_permissions; T005 deberá mapear is_admin desde persistencia.
