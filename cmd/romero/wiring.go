@@ -2,18 +2,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/romero-project/romero/internal/application/capture"
+	"github.com/romero-project/romero/internal/application/feedback"
 	"github.com/romero-project/romero/internal/application/provisioning"
+	"github.com/romero-project/romero/internal/application/requests"
+	"github.com/romero-project/romero/internal/application/retrieval"
+	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/infrastructure/persistence/postgres"
 	"github.com/romero-project/romero/internal/interfaces/cli"
+	"github.com/romero-project/romero/internal/interfaces/rest"
 	"github.com/romero-project/romero/migrations"
 )
 
@@ -21,6 +30,7 @@ func defaultDependencies() cli.Dependencies {
 	return cli.Dependencies{
 		Migrator:        gooseMigrator{},
 		OpenProvisioner: openPostgresProvisioner,
+		Serve:           servePostgresServer,
 	}
 }
 
@@ -277,4 +287,261 @@ func mapAuthCandidates(rows []postgres.PrincipalAuthCandidate) []provisioning.Pr
 		})
 	}
 	return out
+}
+
+func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping postgres: %w", err)
+	}
+
+	store, err := postgres.NewStore(pool)
+	if err != nil {
+		return err
+	}
+
+	repo := newPostgresAdapter(pgStoreWrapper{ProvisioningStore: store.Provisioning()})
+	audit := store.Audit()
+	auth := provisioning.NewAuthenticator(repo, audit)
+	taskPerms := store.TaskPermissions()
+	opaqueStore := store.OpaqueRequests(60 * time.Second)
+
+	capSvc, err := capture.NewService(store, audit, pgCaptureAccess{r: taskPerms}, pgCaptureOpaque{o: opaqueStore}, nil)
+	if err != nil {
+		return err
+	}
+	retSvc, err := retrieval.NewService(store, audit, pgRetrievalAccess{r: taskPerms}, pgOpaqueStatus{o: opaqueStore}, nil)
+	if err != nil {
+		return err
+	}
+	fbSvc, err := feedback.NewService(store, audit, pgFeedbackAccess{r: taskPerms}, pgFeedbackOpaque{o: opaqueStore}, capSvc, nil)
+	if err != nil {
+		return err
+	}
+
+	worker, err := requests.NewWorker(
+		pgWorkerQueue{o: opaqueStore},
+		pgPrincipalResolver{repo: repo},
+		&requests.ServiceExecutor{Capture: capSvc, Feedback: fbSvc},
+		requests.Config{},
+	)
+	if err != nil {
+		return err
+	}
+
+	handler, _, err := rest.NewRouter(rest.RouterDeps{
+		Auth:      auth,
+		Capture:   capSvc,
+		Retrieval: retSvc,
+		Feedback:  fbSvc,
+		DB:        pool,
+		Version:   cli.Version,
+	})
+	if err != nil {
+		return err
+	}
+
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	defer cancelWorker()
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		_ = worker.Run(workerCtx)
+	}()
+
+	srv := &http.Server{
+		Addr:              listenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		if lErr := srv.ListenAndServe(); lErr != nil && !errors.Is(lErr, http.ErrServerClosed) {
+			errCh <- lErr
+		}
+		close(errCh)
+	}()
+
+	select {
+	case sErr := <-errCh:
+		cancelWorker()
+		<-workerDone
+		return sErr
+	case <-ctx.Done():
+		shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelShut()
+		_ = srv.Shutdown(shutCtx)
+		cancelWorker()
+		<-workerDone
+		return nil
+	}
+}
+
+type pgCaptureAccess struct {
+	r *postgres.TaskPermissionRepository
+}
+
+func (a pgCaptureAccess) EvaluateTaskAccess(ctx context.Context, q identity.TaskPermissionQuery) (capture.TaskAccessSnapshot, error) {
+	s, err := a.r.EvaluateTaskAccess(ctx, q)
+	return capture.TaskAccessSnapshot{CanRead: s.CanRead, CanWrite: s.CanWrite}, err
+}
+
+type pgRetrievalAccess struct {
+	r *postgres.TaskPermissionRepository
+}
+
+func (a pgRetrievalAccess) EvaluateTaskAccess(ctx context.Context, q identity.TaskPermissionQuery) (retrieval.TaskAccessSnapshot, error) {
+	s, err := a.r.EvaluateTaskAccess(ctx, q)
+	return retrieval.TaskAccessSnapshot{CanRead: s.CanRead, CanWrite: s.CanWrite}, err
+}
+
+type pgFeedbackAccess struct {
+	r *postgres.TaskPermissionRepository
+}
+
+func (a pgFeedbackAccess) EvaluateTaskAccess(ctx context.Context, q identity.TaskPermissionQuery) (feedback.TaskAccessSnapshot, error) {
+	s, err := a.r.EvaluateTaskAccess(ctx, q)
+	return feedback.TaskAccessSnapshot{CanRead: s.CanRead, CanWrite: s.CanWrite}, err
+}
+
+type pgCaptureOpaque struct{ o *postgres.OpaqueRequestStore }
+
+func (a pgCaptureOpaque) Enqueue(ctx context.Context, req capture.OpaqueRequest) (capture.OpaqueReceipt, error) {
+	rec, err := a.o.Enqueue(ctx, postgres.OpaqueRequest{
+		RequestID:      req.RequestID,
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		TaskID:         req.TaskID,
+		PrincipalID:    req.PrincipalID,
+		Operation:      postgres.OpaqueOperation(req.Operation),
+		TargetMemoryID: req.TargetMemoryID,
+		PayloadVersion: req.PayloadVersion,
+		Payload:        req.Payload,
+		RequestSHA256:  req.RequestSHA256,
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if errors.Is(err, postgres.ErrIdempotencyConflict) {
+		return capture.OpaqueReceipt{}, capture.ErrConflict
+	}
+	return capture.OpaqueReceipt{RequestID: rec.RequestID}, err
+}
+
+type pgFeedbackOpaque struct{ o *postgres.OpaqueRequestStore }
+
+func (a pgFeedbackOpaque) EnqueueFeedback(ctx context.Context, req feedback.OpaqueFeedbackRequest) (feedback.OpaqueReceipt, error) {
+	rec, err := a.o.Enqueue(ctx, postgres.OpaqueRequest{
+		RequestID:      req.RequestID,
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		TaskID:         req.TaskID,
+		PrincipalID:    req.PrincipalID,
+		Operation:      postgres.OpaqueOpFeedback,
+		TargetMemoryID: &req.TargetMemoryID,
+		PayloadVersion: 1,
+		Payload:        json.RawMessage(req.Payload),
+		RequestSHA256:  req.RequestSHA256,
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if errors.Is(err, postgres.ErrIdempotencyConflict) {
+		return feedback.OpaqueReceipt{}, feedback.ErrConflict
+	}
+	return feedback.OpaqueReceipt{RequestID: rec.RequestID}, err
+}
+
+type pgOpaqueStatus struct{ o *postgres.OpaqueRequestStore }
+
+func (a pgOpaqueStatus) GetStatus(ctx context.Context, tenantID, requestID uuid.UUID) (*retrieval.OpaqueRequestMetadata, error) {
+	m, err := a.o.GetStatus(ctx, tenantID, requestID)
+	if err != nil {
+		if errors.Is(err, memory.ErrNotFound) {
+			return nil, retrieval.ErrNotFound
+		}
+		return nil, err
+	}
+	return &retrieval.OpaqueRequestMetadata{
+		RequestID: m.RequestID,
+		TenantID:  m.TenantID,
+		ProjectID: m.ProjectID,
+		TaskID:    m.TaskID,
+		Status:    string(m.Status),
+	}, nil
+}
+
+type pgPrincipalResolver struct{ repo *pgProvisioningAdapter }
+
+func (r pgPrincipalResolver) ResolveAuthContext(ctx context.Context, tenantID, principalID uuid.UUID) (identity.AuthContext, error) {
+	p, err := r.repo.GetPrincipalByID(ctx, tenantID, principalID)
+	if err != nil {
+		return identity.AuthContext{}, err
+	}
+	if !p.IsActive || (p.ExpiresAt != nil && p.ExpiresAt.Before(time.Now().UTC())) {
+		return identity.AuthContext{}, identity.ErrForbidden
+	}
+	return identity.AuthContext{
+		TenantID:        p.TenantID,
+		PrincipalID:     p.ID,
+		PrincipalType:   p.PrincipalType,
+		AgentID:         p.AgentID,
+		AllowedProjects: p.AllowedProjects,
+		AllowedScopes:   p.AllowedScopes,
+		IsAdmin:         p.IsAdmin,
+	}, nil
+}
+
+type pgWorkerQueue struct{ o *postgres.OpaqueRequestStore }
+
+func (q pgWorkerQueue) Claim(ctx context.Context) (*requests.Lease, error) {
+	l, err := q.o.Claim(ctx)
+	if err != nil || l == nil {
+		return nil, err
+	}
+	return &requests.Lease{RequestID: l.RequestID, Token: l.Token, ExpiresAt: l.ExpiresAt}, nil
+}
+
+func (q pgWorkerQueue) Renew(ctx context.Context, lease requests.Lease) (bool, error) {
+	return q.o.Renew(ctx, postgres.Lease{RequestID: lease.RequestID, Token: lease.Token, ExpiresAt: lease.ExpiresAt})
+}
+
+func (q pgWorkerQueue) Execute(ctx context.Context, lease requests.Lease, apply requests.ApplyMutation) error {
+	err := q.o.Execute(ctx, postgres.Lease{RequestID: lease.RequestID, Token: lease.Token, ExpiresAt: lease.ExpiresAt},
+		func(ctx context.Context, reg memory.RepositoryRegistry, perms identity.TaskPermissionReader, rec postgres.OpaqueRequestRecord) (*uuid.UUID, error) {
+			return apply(ctx, reg, perms, requests.OpaqueRequestRecord{
+				RequestID:      rec.RequestID,
+				TenantID:       rec.TenantID,
+				ProjectID:      rec.ProjectID,
+				TaskID:         rec.TaskID,
+				PrincipalID:    rec.PrincipalID,
+				Operation:      requests.OpaqueOperation(rec.Operation),
+				TargetMemoryID: rec.TargetMemoryID,
+				PayloadVersion: rec.PayloadVersion,
+				Payload:        rec.Payload,
+				RequestSHA256:  rec.RequestSHA256,
+				IdempotencyKey: rec.IdempotencyKey,
+				AttemptCount:   rec.AttemptCount,
+				MaxRetries:     rec.MaxRetries,
+			})
+		},
+	)
+	if errors.Is(err, postgres.ErrLeaseLost) {
+		return requests.ErrLeaseLost
+	}
+	return err
+}
+
+func (q pgWorkerQueue) RecordFailure(ctx context.Context, lease requests.Lease, class requests.FailureClass, code, message string) error {
+	err := q.o.RecordFailure(ctx, postgres.Lease{RequestID: lease.RequestID, Token: lease.Token, ExpiresAt: lease.ExpiresAt}, postgres.FailureClass(class), code, message)
+	if errors.Is(err, postgres.ErrLeaseLost) {
+		return requests.ErrLeaseLost
+	}
+	return err
+}
+
+func (q pgWorkerQueue) PurgeTerminal(ctx context.Context, retention time.Duration) (int64, error) {
+	return q.o.PurgeTerminal(ctx, retention)
 }

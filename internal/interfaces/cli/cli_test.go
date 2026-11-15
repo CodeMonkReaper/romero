@@ -471,3 +471,66 @@ func TestTaskPermissionGrantAndRevokeCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestServeCommand(t *testing.T) {
+	// Missing Serve dependency fails closed.
+	cmd := cli.NewRootCmd(cli.Dependencies{})
+	cmd.SetArgs([]string{"serve", "--dsn", "postgres://u:p@localhost:5432/db"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "server dependency is not configured") {
+		t.Fatalf("expected server dependency error, got %v", err)
+	}
+
+	// Default listen address when no flag, env, or config is provided.
+	var gotDSN, gotAddr string
+	deps := cli.Dependencies{
+		Serve: func(_ context.Context, dsn, addr string) error {
+			gotDSN = dsn
+			gotAddr = addr
+			return nil
+		},
+	}
+	t.Setenv("ROMERO_LISTEN_ADDR", "")
+	cmd = cli.NewRootCmd(deps)
+	cmd.SetArgs([]string{"serve", "--dsn", "postgres://u:p@localhost:5432/db", "--config", filepath.Join(t.TempDir(), "missing.toml")})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("serve default Execute: %v", err)
+	}
+	if gotDSN != "postgres://u:p@localhost:5432/db" || gotAddr != "127.0.0.1:8420" {
+		t.Fatalf("unexpected default serve args: dsn=%q addr=%q", gotDSN, gotAddr)
+	}
+
+	// [server] from TOML config.
+	cfgPath := filepath.Join(t.TempDir(), "romero.toml")
+	if err := os.WriteFile(cfgPath, []byte("[server]\nhost = \"0.0.0.0\"\nrest_port = 9090\n[database]\ndsn = \"postgres://cfg/db\"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cmd = cli.NewRootCmd(deps)
+	cmd.SetArgs([]string{"serve", "--config", cfgPath})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("serve config Execute: %v", err)
+	}
+	if gotDSN != "postgres://cfg/db" || gotAddr != "0.0.0.0:9090" {
+		t.Fatalf("unexpected config serve args: dsn=%q addr=%q", gotDSN, gotAddr)
+	}
+
+	// ROMERO_LISTEN_ADDR overrides TOML config.
+	t.Setenv("ROMERO_LISTEN_ADDR", "127.0.0.1:9999")
+	cmd = cli.NewRootCmd(deps)
+	cmd.SetArgs([]string{"serve", "--config", cfgPath})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("serve env Execute: %v", err)
+	}
+	if gotAddr != "127.0.0.1:9999" {
+		t.Fatalf("expected env override 127.0.0.1:9999, got %q", gotAddr)
+	}
+
+	// --listen flag overrides env and config.
+	cmd = cli.NewRootCmd(deps)
+	cmd.SetArgs([]string{"serve", "--config", cfgPath, "--listen", "127.0.0.1:7777"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("serve flag Execute: %v", err)
+	}
+	if gotAddr != "127.0.0.1:7777" {
+		t.Fatalf("expected flag override 127.0.0.1:7777, got %q", gotAddr)
+	}
+}

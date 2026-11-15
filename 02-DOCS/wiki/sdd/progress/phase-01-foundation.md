@@ -1,5 +1,12 @@
 # Progress Ledger — `phase-01-foundation`
 
+## T008 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/8
+- branch: `feat/t008-rest-server` (base `ee4efe1`)
+- controls (`golang:1.27` + `golangci-lint:latest`): `gofmt -s -w` PASS, `CGO_ENABLED=0 go build -trimpath ./cmd/romero` PASS, `go vet ./...` PASS, `golangci-lint run ./internal/interfaces/rest/... ./internal/interfaces/cli/... ./cmd/romero/...` (`0 issues.`), `CGO_ENABLED=1 go test -count=1 -race -cover ./internal/interfaces/rest/... ./internal/interfaces/cli/... ./cmd/romero/...` PASS (`rest` `81.4%`, `cli` `93.5%`, `cmd/romero` `35.7%`).
+- risk & review: `rsc risk --base main` computed Tier 1 (`default`), and a 3-reviewer panel (`Security`, `Correctness`, `Tests`) ran in line with the T008 plan (`auth` boundary): all 3 lenses returned `VERDICT: pass` with 0 blockers (Tests nit on `newServeCmd`/`resolveListenAddr` resolved by adding `TestServeCommand`).
+- traceability: `AC-01`, `AC-03`, `AC-04`, `AC-05`, `AC-06`, `AC-07`, `AC-08`, `AC-09`, `AC-10`, `AC-T1`–`AC-T12`.
+
 ## T011 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/20
 - branch: `feat/t011-opaque-worker` (base `c47a384`)

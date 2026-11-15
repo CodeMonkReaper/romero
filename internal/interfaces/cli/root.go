@@ -5,6 +5,9 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,8 +40,33 @@ func NewRootCmd(deps Dependencies) *cobra.Command {
 		newBootstrapCmd(&gf, deps),
 		newPrincipalCmd(&gf, deps),
 		newTaskPermissionCmd(&gf, deps),
+		newServeCmd(&gf, deps),
 	)
 	return root
+}
+
+func newServeCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
+	var listenAddr string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the authenticated ROMERO REST server and durable opaque worker",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if deps.Serve == nil {
+				return errors.New("server dependency is not configured")
+			}
+			dsn, err := resolveDSN(gf.dsn, gf.configPath)
+			if err != nil {
+				return err
+			}
+			addr := resolveListenAddr(listenAddr, gf.configPath)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return deps.Serve(ctx, dsn, addr)
+		},
+	}
+	cmd.Flags().StringVar(&listenAddr, "listen", "", "HTTP listen address (overrides ROMERO_LISTEN_ADDR and config)")
+	return cmd
 }
 
 func newVersionCmd() *cobra.Command {

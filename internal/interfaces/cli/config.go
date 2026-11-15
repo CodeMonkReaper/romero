@@ -23,6 +23,10 @@ const Version = "romero v0.1.0-phase01"
 const defaultConfigPath = "configs/romero.toml"
 
 type tomlFileConfig struct {
+	Server struct {
+		Host     string `toml:"host"`
+		RESTPort int    `toml:"rest_port"`
+	} `toml:"server"`
 	Database struct {
 		DSN string `toml:"dsn"`
 	} `toml:"database"`
@@ -55,6 +59,7 @@ type Migrator interface {
 type Dependencies struct {
 	Migrator        Migrator
 	OpenProvisioner func(ctx context.Context, dsn string) (ProvisioningClient, func(), error)
+	Serve           func(ctx context.Context, dsn, listenAddr string) error
 }
 
 func resolveDSN(flagDSN, configPath string) (string, error) {
@@ -91,6 +96,31 @@ func resolveAPIKey(flagKey string) string {
 		return v
 	}
 	return strings.TrimSpace(os.Getenv("ROMERO_API_KEY"))
+}
+
+func resolveListenAddr(flagAddr, configPath string) string {
+	if v := strings.TrimSpace(flagAddr); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("ROMERO_LISTEN_ADDR")); v != "" {
+		return v
+	}
+	path := strings.TrimSpace(configPath)
+	if path == "" {
+		path = defaultConfigPath
+	}
+	raw, err := os.ReadFile(path) // #nosec G304 -- path comes from explicit operator CLI --config flag
+	if err == nil {
+		var parsed tomlFileConfig
+		if toml.Unmarshal(raw, &parsed) == nil && parsed.Server.RESTPort > 0 {
+			host := strings.TrimSpace(parsed.Server.Host)
+			if host == "" {
+				host = "127.0.0.1"
+			}
+			return fmt.Sprintf("%s:%d", host, parsed.Server.RESTPort)
+		}
+	}
+	return "127.0.0.1:8420"
 }
 
 func writeJSON(w io.Writer, v any) error {
