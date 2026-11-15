@@ -103,6 +103,7 @@ var (
 	ErrInvalidIdentifier            = errors.New("required identifier is missing")
 	ErrInvalidHash                  = errors.New("content_sha256 must be 64 lowercase hex characters")
 	ErrSelfLoopRelation             = errors.New("from_memory_id and to_memory_id must differ")
+	ErrValidation                   = errors.New("validation error")
 	ErrForbidden                    = errors.New("forbidden")
 	ErrNotFound                     = errors.New("not found")
 )

@@ -59,3 +59,57 @@ type RepositoryRegistry interface {
 type UnitOfWork interface {
 	ExecTx(ctx context.Context, fn func(RepositoryRegistry) error) error
 }
+
+// SearchFilter carries Zero-Trust scope constraints and query parameters for tri-modal retrieval.
+type SearchFilter struct {
+	TenantID            uuid.UUID
+	ProjectIDs          []uuid.UUID
+	Scopes              []identity.ScopeType
+	CallerAgentID       *uuid.UUID
+	AllowedTasks        []string
+	QueryText           string
+	IncludeSuperseded   bool
+	IncludeConsolidated bool
+	Limit               int
+	Now                 time.Time
+}
+
+// CausalWalkRow represents a single edge traversed in a recursive SQL subgraph query.
+type CausalWalkRow struct {
+	FromID       uuid.UUID
+	ToID         uuid.UUID
+	RelationType RelationType
+	Weight       float32
+	Depth        int
+}
+
+// EmbeddingRepository persists and retrieves dense/sparse embeddings in PostgreSQL.
+type EmbeddingRepository interface {
+	UpsertMemoryEmbedding(ctx context.Context, emb MemoryEmbedding) error
+	GetMemoryEmbeddingsByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]float32, error)
+}
+
+// JobQueueRepository claims and updates asynchronous enrichment jobs with SKIP LOCKED semantics.
+type JobQueueRepository interface {
+	ClaimPendingMemoryJobs(ctx context.Context, jobType string, limit int, now time.Time) ([]MemoryJob, error)
+	CompleteMemoryJob(ctx context.Context, jobID uuid.UUID, completedAt time.Time) error
+	FailMemoryJob(ctx context.Context, jobID uuid.UUID, lastError string, nextScheduledAt time.Time, deadLetter bool) error
+}
+
+// SearchRepository executes Zero-Trust tri-modal candidate queries and graph snapshot loads.
+type SearchRepository interface {
+	SearchByTrigram(ctx context.Context, f SearchFilter) ([]uuid.UUID, error)
+	SearchByFTS(ctx context.Context, f SearchFilter) ([]uuid.UUID, error)
+	SearchByVector(ctx context.Context, f SearchFilter, queryVec []float32) ([]uuid.UUID, error)
+	GetMemoriesByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Memory, error)
+	LoadProjectGraphSnapshot(ctx context.Context, tenantID uuid.UUID, projectID *uuid.UUID, now time.Time) ([]Memory, []MemoryRelation, map[uuid.UUID][]float32, error)
+	TraverseCausalSubgraph(ctx context.Context, tenantID uuid.UUID, seeds []uuid.UUID, hops int, now time.Time) ([]CausalWalkRow, error)
+}
+
+// GraphMutationNotifier synchronizes write-through mutations into the in-RAM L1 Cognitive Graph.
+type GraphMutationNotifier interface {
+	ApplyMemoryUpsert(m Memory)
+	ApplyMemoryStatusChange(tenantID uuid.UUID, projectID *uuid.UUID, memoryID uuid.UUID, status MemoryStatus, validUntil *time.Time)
+	ApplyRelationsAdded(rels []MemoryRelation)
+	ApplyEmbeddingUpsert(tenantID uuid.UUID, projectID *uuid.UUID, memoryID uuid.UUID, denseVec []float32)
+}
