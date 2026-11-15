@@ -113,3 +113,35 @@ type GraphMutationNotifier interface {
 	ApplyRelationsAdded(rels []MemoryRelation)
 	ApplyEmbeddingUpsert(tenantID uuid.UUID, projectID *uuid.UUID, memoryID uuid.UUID, denseVec []float32)
 }
+
+// ConflictGraphNotifier notifies the L1 graph cache when conflict edges are deactivated.
+type ConflictGraphNotifier interface {
+	ApplyRelationDeactivated(tenantID uuid.UUID, projectID *uuid.UUID, relationID uuid.UUID)
+}
+
+// ConflictPairRow joins an active 'contradicts' relation with both endpoint memories.
+type ConflictPairRow struct {
+	Relation   MemoryRelation
+	FromMemory Memory
+	ToMemory   Memory
+}
+
+// SemanticNeighborRepository finds same-partition semantic neighbors and cleans up orphan conflicts.
+type SemanticNeighborRepository interface {
+	FindSameScopeSemanticNeighbors(ctx context.Context, mem Memory, queryVec []float32, minSimilarity float32, limit int, now time.Time) ([]Memory, error)
+	DeactivateConflictsByMemoryID(ctx context.Context, tenantID, memoryID uuid.UUID, validUntil time.Time) ([]uuid.UUID, error)
+	HasActiveConflicts(ctx context.Context, tenantID, memoryID uuid.UUID, now time.Time) (bool, error)
+}
+
+// ConflictRepository exposes Zero-Trust conflict queries and atomic resolution primitives.
+type ConflictRepository interface {
+	ListActiveConflicts(ctx context.Context, tenantID uuid.UUID, projectID *uuid.UUID, limit, offset int, now time.Time) ([]ConflictPairRow, error)
+	GetConflictForUpdate(ctx context.Context, tenantID, conflictID uuid.UUID) (*ConflictPairRow, error)
+	DeactivateConflictEdge(ctx context.Context, tenantID, conflictID uuid.UUID, validUntil time.Time) error
+}
+
+// ConsolidationRepository loads REM episodic candidates and active verified memories.
+type ConsolidationRepository interface {
+	ListREMConsolidationCandidates(ctx context.Context, tenantID uuid.UUID, projectID *uuid.UUID, minConfidence float32) ([]Memory, map[uuid.UUID][]float32, error)
+	ListActiveVerifiedByProject(ctx context.Context, tenantID uuid.UUID, projectID *uuid.UUID, now time.Time) ([]Memory, error)
+}
