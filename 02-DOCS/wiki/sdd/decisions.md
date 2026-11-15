@@ -145,3 +145,10 @@ Registro append-only de las decisiones arquitectónicas y de especificación tom
 - T004 corrige la frontera de unicidad por inquilino en una migración posterior. Ante duplicados históricos, la migración revierte y conserva los registros para que el operador los resuelva.
 - La consulta vigente de permisos define el momento de autorización. El trabajador vuelve a comprobar antes de mutar y confirma los efectos solo si conserva una reserva válida.
 - AC-T7 a AC-T12 reúnen las decisiones aprobadas sobre aceptación, claves, ejecución, estado y retención. T002 entrega política y puerto de dominio. El adaptador PostgreSQL, HTTP y el trabajador tienen tareas y pruebas propias. [Plan de la enmienda](plans/phase-01-task-authorization-draft.md).
+
+## 2026-11-14 — Cierre de DQ-02 y decisiones de T004 (`sqlc`, `pgx v5.9.2`, `clock_timestamp()`, `goose`)
+
+- **`DQ-02` cerrado (`sqlc generate`):** Las consultas tipadas en `internal/infrastructure/persistence/queries/*.sql` y el código generado en `internal/infrastructure/persistence/sqlcgen/*` compilan limpiamente sin diffs residuales tras `a9d35ac`.
+- **Actualización de `github.com/jackc/pgx/v5` a `v5.9.2`:** Impuesta por `govulncheck` para resolver `GO-2026-5004` detectado en `v5.7.4`; `govulncheck ./...` reporta `0` vulnerabilidades afectando al código.
+- **Uso de `clock_timestamp()` en `opaque_requests.sql`:** En transacciones multi-sentencia `READ COMMITTED` (`OpaqueRequestStore.Execute`), `NOW()` permanece congelado en el inicio de la transacción (`transaction_timestamp()`); usar `clock_timestamp()` garantiza cercado efectivo ante expiración de lease ocurrida durante el callback `apply`.
+- **Migración `00003` reversible con pre-check de duplicados:** Adquiere `SHARE ROW EXCLUSIVE`, aborta antes de reconstruir `idx_memories_active_topic_key` si existen duplicados activos en `org_shared`/`global_public` para permitir resolución manual por el operador, y revierte limpiamente en `-- +goose Down`.
