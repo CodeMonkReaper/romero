@@ -7,6 +7,7 @@ timestamp: 2026-11-15T14:16:00-03:00
 topic: sdd
 slug: phase-03-nli-governor-rem
 status: planned
+branch: feat/t001-phase03-domain-governor
 ---
 
 # Spec — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM
