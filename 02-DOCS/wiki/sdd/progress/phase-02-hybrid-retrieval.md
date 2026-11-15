@@ -11,7 +11,24 @@
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `verified` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `verified` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
-| `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+| `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `verified` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | `0` |
+
+## T008 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/34
+- branch: `feat/t008-phase02-final-verification` (base `3dcaa44`)
+- Level 1 controls (`go1.27.3`, `sqlc v1.31.1`):
+  - `sqlc generate`: PASS (0 semantic diff vs committed `sqlcgen/`).
+  - `go vet ./...`: PASS.
+  - `CGO_ENABLED=0 go build -trimpath ./cmd/romero`: PASS.
+  - `go test -count=1 -cover ./internal/... ./cmd/...`: PASS on all 18 pure-Go packages (`capture` 85.0%, `context` 93.5%, `eval` 72.6%, `feedback` 86.9%, `jobs` 83.3%, `provisioning` 91.1%, `requests` 86.7%, `retrieval` 86.1%, `graph` 93.4%, `identity` 98.2%, `memory` 87.8%, `provenance` 100.0%, `security` 100.0%, `cachel1` 80.9%, `neural` 88.6%, `cli` 91.1%, `rest` 81.7%, `cmd/romero` 33.0%); `internal/infrastructure/persistence/postgres` pure-Go unit tests (`-skip` live PG17 suite) PASS (`0.950s`).
+  - `go test -c ./tests/integration` & `go test -c ./tests/security`: PASS (both binaries compile cleanly).
+- Level 2 evaluation:
+  - `go run ./cmd/romero eval --dataset tests/evaluation/golden_dataset.json`: PASS (`cases_evaluated: 2`, `ndcg_at_5: 1`, `multi_hop_recall: 1`, `obsolete_suppression_rate: 1`, `zero_trust_leakage_rate: 0`, `pass: true`).
+- Environment-blocked / not run:
+  - `-race` (no `gcc` / C compiler in Windows session).
+  - `golangci-lint` (not installed in environment).
+  - Live PG17 execution of `internal/infrastructure/persistence/postgres` (10 DB tests) and `tests/integration` / `tests/security` (Docker Desktop daemon unavailable; `ROMERO_TEST_DSN` unset).
+- traceability: `AC-01`..`AC-12` (`all ACs`).
 
 ## T007 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/33
