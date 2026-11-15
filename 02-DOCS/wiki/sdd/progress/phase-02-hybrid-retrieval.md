@@ -10,8 +10,15 @@
 | `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `verified` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
-| `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
+| `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `verified` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T007 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/33
+- branch: `feat/t007-phase02-integration-security` (base `4ff599e`)
+- controls (`go1.27.3`): `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build ./...` PASS, `go test -c ./tests/integration` & `go test -c ./tests/security` PASS (compiled cleanly). *Not run:* live PG17 execution of `tests/integration` / `tests/security` (Docker Desktop daemon unavailable in this Windows session; `ROMERO_TEST_DSN` unset).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`0b56541f`): Round 1 (`2 blockers, 2 nits`), Round 2 (`1 blocker, 0 nits`), Round 3 (`837456a`) -> `0 findings: 0 blockers, 0 nits` (`VERDICT: approved`).
+- traceability: `AC-01`..`AC-12`.
 
 ## T006 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/32

@@ -23,12 +23,16 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/romero-project/romero/internal/application/capture"
+	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/feedback"
+	"github.com/romero-project/romero/internal/application/jobs"
 	"github.com/romero-project/romero/internal/application/provisioning"
 	"github.com/romero-project/romero/internal/application/requests"
 	"github.com/romero-project/romero/internal/application/retrieval"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
+	"github.com/romero-project/romero/internal/infrastructure/cachel1"
+	"github.com/romero-project/romero/internal/infrastructure/neural"
 	"github.com/romero-project/romero/internal/infrastructure/persistence/postgres"
 	"github.com/romero-project/romero/internal/interfaces/cli"
 	"github.com/romero-project/romero/internal/interfaces/rest"
@@ -96,16 +100,19 @@ func OpenMigratedPool(t *testing.T) *pgxpool.Pool {
 
 // Env wires the full live-Postgres application stack, HTTP REST server, and opaque worker.
 type Env struct {
-	Pool    *pgxpool.Pool
-	Store   *postgres.Store
-	ProvSvc *provisioning.Service
-	Auth    *provisioning.Authenticator
-	CapSvc  *capture.Service
-	RetSvc  *retrieval.Service
-	FbSvc   *feedback.Service
-	Worker  *requests.Worker
-	Queue   *pgWorkerQueue
-	Server  *httptest.Server
+	Pool      *pgxpool.Pool
+	Store     *postgres.Store
+	ProvSvc   *provisioning.Service
+	Auth      *provisioning.Authenticator
+	CapSvc    *capture.Service
+	RetSvc    *retrieval.Service
+	CtxSvc    *contextbuilder.Service
+	FbSvc     *feedback.Service
+	L1Graph   *cachel1.CognitiveGraph
+	EmbWorker *jobs.EmbeddingWorker
+	Worker    *requests.Worker
+	Queue     *pgWorkerQueue
+	Server    *httptest.Server
 
 	nowMu sync.Mutex
 	now   time.Time
@@ -151,9 +158,26 @@ func NewEnv(t *testing.T, pool *pgxpool.Pool) *Env {
 		t.Fatalf("feedback.NewService: %v", err)
 	}
 
+	l1Graph := cachel1.NewCognitiveGraph(store.Search())
+	defaultEmbedder := neural.NewBGEM3Client(neural.BGEM3Config{Enabled: false})
+
+	capSvc.SetGraphNotifier(l1Graph)
+	fbSvc.SetGraphNotifier(l1Graph)
+	retSvc.SetHybridDeps(store.Search(), defaultEmbedder, l1Graph)
+
+	ctxSvc, err := contextbuilder.NewService(retSvc, audit, clock)
+	if err != nil {
+		t.Fatalf("contextbuilder.NewService: %v", err)
+	}
+
 	env.CapSvc = capSvc
 	env.RetSvc = retSvc
+	env.CtxSvc = ctxSvc
 	env.FbSvc = fbSvc
+	env.L1Graph = l1Graph
+	env.EmbWorker = jobs.NewEmbeddingWorker(store.JobQueue(), store.Search(), store.Embeddings(), defaultEmbedder, l1Graph, jobs.EmbeddingWorkerConfig{
+		PollInterval: 25 * time.Millisecond,
+	}, nil)
 
 	env.Queue = &pgWorkerQueue{o: opaqueStore}
 	exec := &requests.ServiceExecutor{Capture: capSvc, Feedback: fbSvc}
@@ -177,9 +201,11 @@ func NewEnv(t *testing.T, pool *pgxpool.Pool) *Env {
 		Auth:      env.Auth,
 		Capture:   capSvc,
 		Retrieval: retSvc,
+		Context:   ctxSvc,
 		Feedback:  fbSvc,
 		DB:        pool,
-		Version:   "0.1.0-test",
+		L1Stats:   l1Graph,
+		Version:   "0.2.0-test",
 	})
 	if err != nil {
 		t.Fatalf("rest.NewRouter: %v", err)
@@ -187,6 +213,14 @@ func NewEnv(t *testing.T, pool *pgxpool.Pool) *Env {
 	env.Server = httptest.NewServer(handler)
 	t.Cleanup(env.Server.Close)
 	return env
+}
+
+// SetEmbedder reconfigures RetrievalService and EmbeddingWorker with a live or mock EmbeddingProvider.
+func (e *Env) SetEmbedder(p memory.EmbeddingProvider) {
+	e.RetSvc.SetHybridDeps(e.Store.Search(), p, e.L1Graph)
+	e.EmbWorker = jobs.NewEmbeddingWorker(e.Store.JobQueue(), e.Store.Search(), e.Store.Embeddings(), p, e.L1Graph, jobs.EmbeddingWorkerConfig{
+		PollInterval: 25 * time.Millisecond,
+	}, nil)
 }
 
 // Now returns the current controllable test clock.
