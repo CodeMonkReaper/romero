@@ -89,7 +89,8 @@ func PropagateActivation(seeds map[uuid.UUID]float32, sub AuthorizedSubgraph, ho
 		if _, ok := sub.Nodes[e.ToID]; !ok {
 			continue
 		}
-		if e.Weight <= 0 || Conductance(e.RelationType, includeSuperseded) <= 0 {
+		w64 := float64(e.Weight)
+		if math.IsNaN(w64) || math.IsInf(w64, 0) || e.Weight <= 0 || Conductance(e.RelationType, includeSuperseded) <= 0 {
 			continue
 		}
 		activeEdges = append(activeEdges, e)
@@ -145,6 +146,7 @@ func PropagateActivation(seeds map[uuid.UUID]float32, sub AuthorizedSubgraph, ho
 					minHop[e.ToID] = h
 				}
 				if e.RelationType == memory.RelationContradicts {
+					conflict[e.FromID] = true
 					conflict[e.ToID] = true
 				}
 			}
@@ -156,6 +158,7 @@ func PropagateActivation(seeds map[uuid.UUID]float32, sub AuthorizedSubgraph, ho
 				}
 				if e.RelationType == memory.RelationContradicts {
 					conflict[e.FromID] = true
+					conflict[e.ToID] = true
 				}
 			}
 		}

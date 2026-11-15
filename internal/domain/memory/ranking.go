@@ -148,7 +148,10 @@ func RankCandidates(inputs []CandidateRankingInput, now time.Time, includeSupers
 
 		importance := clampFloat64(float64(in.Memory.Importance), 0, 1)
 		utility := clampFloat64(float64(in.Memory.UtilityScore), -1, 1)
-		sem := math.Max(0, float64(in.SemanticScore))
+		sem := float64(in.SemanticScore)
+		if math.IsNaN(sem) || math.IsInf(sem, 0) || sem < 0 {
+			sem = 0
+		}
 		finalScore := sem * mEpist * mTime * (0.85 + 0.30*importance) * (1.0 + 0.20*utility) * pState
 
 		hasConflict := in.HasConflictAlert || in.Memory.Status == StatusConflicted
