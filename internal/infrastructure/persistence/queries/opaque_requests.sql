@@ -115,14 +115,14 @@ FROM opaque_memory_requests
 WHERE request_id = $1
   AND status = 'running'
   AND lease_token = $2
-  AND lease_expires_at > NOW();
+  AND lease_expires_at > clock_timestamp();
 
 -- name: ClaimNextOpaqueRequest :one
 WITH candidate AS (
     SELECT request_id
     FROM opaque_memory_requests
-    WHERE (status = 'pending' AND next_attempt_at <= NOW())
-       OR (status = 'running' AND lease_expires_at <= NOW())
+    WHERE (status = 'pending' AND next_attempt_at <= clock_timestamp())
+       OR (status = 'running' AND lease_expires_at <= clock_timestamp())
     ORDER BY
         CASE WHEN status = 'running' THEN lease_expires_at ELSE next_attempt_at END ASC,
         created_at ASC
@@ -133,8 +133,8 @@ UPDATE opaque_memory_requests AS r
 SET
     status = 'running',
     lease_token = $1,
-    lease_expires_at = NOW() + make_interval(secs => sqlc.arg(lease_seconds)::integer),
-    updated_at = NOW()
+    lease_expires_at = clock_timestamp() + make_interval(secs => sqlc.arg(lease_seconds)::integer),
+    updated_at = clock_timestamp()
 FROM candidate
 WHERE r.request_id = candidate.request_id
 RETURNING
@@ -161,12 +161,12 @@ RETURNING
 -- name: RenewOpaqueRequestLease :execrows
 UPDATE opaque_memory_requests
 SET
-    lease_expires_at = NOW() + make_interval(secs => sqlc.arg(lease_seconds)::integer),
-    updated_at = NOW()
+    lease_expires_at = clock_timestamp() + make_interval(secs => sqlc.arg(lease_seconds)::integer),
+    updated_at = clock_timestamp()
 WHERE request_id = $1
   AND status = 'running'
   AND lease_token = $2
-  AND lease_expires_at > NOW();
+  AND lease_expires_at > clock_timestamp();
 
 -- name: CompleteOpaqueRequest :execrows
 UPDATE opaque_memory_requests
@@ -177,28 +177,28 @@ SET
     last_error_code = NULL,
     last_error_message = NULL,
     result_memory_id = $3,
-    updated_at = NOW(),
-    completed_at = NOW()
+    updated_at = clock_timestamp(),
+    completed_at = clock_timestamp()
 WHERE request_id = $1
   AND status = 'running'
   AND lease_token = $2
-  AND lease_expires_at > NOW();
+  AND lease_expires_at > clock_timestamp();
 
 -- name: ScheduleOpaqueRequestRetry :execrows
 UPDATE opaque_memory_requests
 SET
     status = 'pending',
     attempt_count = attempt_count + 1,
-    next_attempt_at = NOW() + make_interval(secs => sqlc.arg(backoff_seconds)::integer),
+    next_attempt_at = clock_timestamp() + make_interval(secs => sqlc.arg(backoff_seconds)::integer),
     lease_token = NULL,
     lease_expires_at = NULL,
     last_error_code = $3,
     last_error_message = $4,
-    updated_at = NOW()
+    updated_at = clock_timestamp()
 WHERE request_id = $1
   AND status = 'running'
   AND lease_token = $2
-  AND lease_expires_at > NOW()
+  AND lease_expires_at > clock_timestamp()
   AND attempt_count < max_retries;
 
 -- name: MarkOpaqueRequestFailedPermanent :execrows
@@ -210,14 +210,14 @@ SET
     lease_expires_at = NULL,
     last_error_code = $3,
     last_error_message = $4,
-    updated_at = NOW(),
-    completed_at = NOW()
+    updated_at = clock_timestamp(),
+    completed_at = clock_timestamp()
 WHERE request_id = $1
   AND status = 'running'
   AND lease_token = $2
-  AND lease_expires_at > NOW();
+  AND lease_expires_at > clock_timestamp();
 
 -- name: PurgeTerminalOpaqueRequests :execrows
 DELETE FROM opaque_memory_requests
 WHERE status IN ('completed', 'failed')
-  AND completed_at <= NOW() - make_interval(secs => sqlc.arg(retention_seconds)::double precision);
+  AND completed_at <= clock_timestamp() - make_interval(secs => sqlc.arg(retention_seconds)::double precision);

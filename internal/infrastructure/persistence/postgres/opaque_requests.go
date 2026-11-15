@@ -68,7 +68,7 @@ type OpaqueRequest struct {
 	Payload        json.RawMessage
 	RequestSHA256  string
 	IdempotencyKey string
-	MaxRetries     int32
+	MaxRetries     *int32
 }
 
 // OpaqueReceipt holds only the server-assigned opaque request identifier.
@@ -132,9 +132,12 @@ func (o *OpaqueRequestStore) Enqueue(ctx context.Context, req OpaqueRequest) (Op
 	if version < 1 {
 		version = 1
 	}
-	retries := req.MaxRetries
-	if retries <= 0 {
-		retries = DefaultOpaqueMaxRetries
+	retries := DefaultOpaqueMaxRetries
+	if req.MaxRetries != nil {
+		if *req.MaxRetries < 0 {
+			return OpaqueReceipt{}, fmt.Errorf("%w: max_retries must be non-negative", ErrInvalidInput)
+		}
+		retries = *req.MaxRetries
 	}
 	payload := req.Payload
 	if len(payload) == 0 {
@@ -160,7 +163,7 @@ func (o *OpaqueRequestStore) Enqueue(ctx context.Context, req OpaqueRequest) (Op
 	}
 
 	var pgErr *pgconn.PgError
-	if req.IdempotencyKey != "" && errors.As(err, &pgErr) && pgErr.Code == "23505" {
+	if req.IdempotencyKey != "" && errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_opaque_requests_idempotency" {
 		existing, lookupErr := o.queries.GetOpaqueRequestByIdempotencyKey(ctx, sqlcgen.GetOpaqueRequestByIdempotencyKeyParams{
 			TenantID:       req.TenantID,
 			PrincipalID:    req.PrincipalID,
@@ -244,7 +247,7 @@ func (o *OpaqueRequestStore) Renew(ctx context.Context, lease Lease) (bool, erro
 
 // Execute runs apply inside a READ COMMITTED transaction, providing both repository registry
 // and transaction-bound TaskPermissionReader, and atomically completes the request only if the
-// lease token is still active and unexpired against PostgreSQL NOW().
+// lease token is still active and unexpired against PostgreSQL clock_timestamp().
 func (o *OpaqueRequestStore) Execute(ctx context.Context, lease Lease, apply ApplyMutation) error {
 	if apply == nil || lease.RequestID == uuid.Nil || lease.Token == uuid.Nil {
 		return ErrLeaseLost
@@ -255,11 +258,7 @@ func (o *OpaqueRequestStore) Execute(ctx context.Context, lease Lease, apply App
 		return err
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback(ctx)
-		}
-	}()
+	defer rollbackTx(&committed, tx)
 
 	txQueries := o.queries.WithTx(tx)
 	row, err := txQueries.GetOpaqueRequestForExecution(ctx, sqlcgen.GetOpaqueRequestForExecutionParams{
@@ -385,11 +384,7 @@ func (o *OpaqueRequestStore) poolTx(ctx context.Context, fn func(*sqlcgen.Querie
 		return err
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback(ctx)
-		}
-	}()
+	defer rollbackTx(&committed, tx)
 	if err := fn(o.queries.WithTx(tx)); err != nil {
 		return err
 	}
@@ -407,8 +402,24 @@ func validateOpaqueEnqueue(req OpaqueRequest) error {
 	if !req.Operation.valid() {
 		return fmt.Errorf("%w: invalid opaque operation %q", ErrInvalidInput, req.Operation)
 	}
-	if len(req.RequestSHA256) != 64 {
-		return fmt.Errorf("%w: request_sha256 must be 64 characters", ErrInvalidInput)
+	if req.IdempotencyKey != "" && strings.TrimSpace(req.IdempotencyKey) == "" {
+		return fmt.Errorf("%w: idempotency_key cannot be whitespace-only", ErrInvalidInput)
+	}
+	if !isLowerHexSHA256(req.RequestSHA256) {
+		return fmt.Errorf("%w: request_sha256 must be 64 lowercase hex characters", ErrInvalidInput)
 	}
 	return nil
+}
+
+func isLowerHexSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

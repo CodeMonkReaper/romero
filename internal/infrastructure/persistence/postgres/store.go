@@ -60,11 +60,7 @@ func (s *Store) ExecTx(ctx context.Context, fn func(memory.RepositoryRegistry) e
 		return err
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback(ctx)
-		}
-	}()
+	defer rollbackTx(&committed, tx)
 
 	reg := &repoRegistry{
 		txQueries:   s.queries.WithTx(tx),
@@ -164,3 +160,12 @@ type TaskPermissionGrant struct {
 
 // ApplyMutation executes a claimed opaque request inside the worker's re-authorized transaction.
 type ApplyMutation func(ctx context.Context, reg memory.RepositoryRegistry, perms identity.TaskPermissionReader, req OpaqueRequestRecord) (resultMemoryID *uuid.UUID, err error)
+
+func rollbackTx(committed *bool, tx pgx.Tx) {
+	if *committed {
+		return
+	}
+	rbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = tx.Rollback(rbCtx)
+}

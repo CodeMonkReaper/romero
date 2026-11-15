@@ -823,7 +823,7 @@ WHERE tenant_id = $1
   AND topic_key = $3
   AND (
       ($2::scope_type_enum IN ('org_shared', 'global_public'))
-      OR (project_id = $4::uuid)
+      OR (COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($4::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
   )
   AND (
       ($2::scope_type_enum <> 'agent_private')

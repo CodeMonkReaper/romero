@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -319,5 +320,207 @@ func TestEdgeGuardsAndTopicPartitionLocking(t *testing.T) {
 		TenantID: f.tenantID, ProjectID: &f.projectID, ScopeType: identity.ScopeTaskShared, TaskID: "t-missing",
 	}, "no-such-topic"); !errors.Is(err, memory.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound locking missing topic, got %v", err)
+	}
+}
+
+func TestTopicPartitionLocking_ScopesReadCommittedAndZeroRetry(t *testing.T) {
+	pool := openTestPool(t)
+	ctx := context.Background()
+	store, err := postgres.NewStore(pool)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	f := seedTenantProjectAgentPrincipal(t, ctx, pool, []string{"agent_private", "task_shared", "project_shared", "org_shared", "global_public"})
+	p2ID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO projects (id, tenant_id, slug, name) VALUES ($1, $2, $3, $4)`, p2ID, f.tenantID, "p2-"+p2ID.String()[:8], "Project Two"); err != nil {
+		t.Fatalf("insert project 2: %v", err)
+	}
+	agentBID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO agents (id, tenant_id, external_key, name) VALUES ($1, $2, $3, 'Agent-B')`, agentBID, f.tenantID, "agent-b-"+agentBID.String()[:8]); err != nil {
+		t.Fatalf("insert agent B: %v", err)
+	}
+
+	srcID := uuid.New()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	const sharedTopic = "shared/topic"
+
+	makeMem := func(scope identity.ScopeType, projectID *uuid.UUID, ownerAgentID *uuid.UUID, taskID string) memory.Memory {
+		return memory.Memory{
+			ID: uuid.New(), TenantID: f.tenantID, ProjectID: projectID, OwnerAgentID: ownerAgentID, TaskID: taskID,
+			Type: memory.TypeSemantic, ScopeType: scope, Status: memory.StatusActive,
+			TopicKey: sharedTopic, Summary: string(scope), Content: "content-" + string(scope),
+			ContentSHA256: sha256Hex("content-" + string(scope)), TokenCount: 2,
+			EpistemicStatus: memory.EpistemicObserved, AlphaScore: 8.5, BetaScore: 1.5, Importance: 0.6,
+			Version: 1, PrimarySourceID: srcID,
+			Clocks:    memory.TriTemporalWindow{ObservedAt: now, CreatedAt: now, ValidFrom: now},
+			UpdatedAt: now,
+		}
+	}
+
+	mAgentA := makeMem(identity.ScopeAgentPrivate, &f.projectID, &f.agentID, "")
+	mAgentB := makeMem(identity.ScopeAgentPrivate, &f.projectID, &agentBID, "")
+	mTask1 := makeMem(identity.ScopeTaskShared, &f.projectID, nil, "task-1")
+	mTask2 := makeMem(identity.ScopeTaskShared, &f.projectID, nil, "task-2")
+	mProj1 := makeMem(identity.ScopeProjectShared, &f.projectID, nil, "")
+	mProj2 := makeMem(identity.ScopeProjectShared, &p2ID, nil, "")
+	mOrg := makeMem(identity.ScopeOrgShared, &f.projectID, nil, "")
+	mGlobal := makeMem(identity.ScopeGlobalPublic, &f.projectID, nil, "")
+
+	if err := store.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
+		if err := reg.Sources().InsertSource(ctx, provenance.MemorySource{
+			ID: srcID, TenantID: f.tenantID, ProjectID: &f.projectID,
+			SourceType: provenance.SourceUserInput, ExternalSourceID: "scope-seed", CreatedAt: now,
+		}); err != nil {
+			return err
+		}
+		for _, m := range []memory.Memory{mAgentA, mAgentB, mTask1, mTask2, mProj1, mProj2, mOrg, mGlobal} {
+			if err := reg.Memories().InsertMemory(ctx, m); err != nil {
+				return fmt.Errorf("insert scope %s: %w", m.ScopeType, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed competing topic_key memories: %v", err)
+	}
+
+	assertLocked := func(name string, target identity.MemoryScopeTarget, wantID uuid.UUID) {
+		t.Helper()
+		err := store.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
+			got, err := reg.Memories().LockActiveTopicMemory(ctx, target, sharedTopic)
+			if err != nil {
+				return err
+			}
+			if got.ID != wantID {
+				return fmt.Errorf("%s: got %s, want %s", name, got.ID, wantID)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("LockActiveTopicMemory(%s): %v", name, err)
+		}
+	}
+
+	assertLocked("agent_private/A", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &f.projectID, OwnerAgentID: &f.agentID, ScopeType: identity.ScopeAgentPrivate}, mAgentA.ID)
+	assertLocked("agent_private/B", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &f.projectID, OwnerAgentID: &agentBID, ScopeType: identity.ScopeAgentPrivate}, mAgentB.ID)
+	assertLocked("task_shared/1", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &f.projectID, ScopeType: identity.ScopeTaskShared, TaskID: "task-1"}, mTask1.ID)
+	assertLocked("task_shared/2", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &f.projectID, ScopeType: identity.ScopeTaskShared, TaskID: "task-2"}, mTask2.ID)
+	assertLocked("project_shared/1", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &f.projectID, ScopeType: identity.ScopeProjectShared}, mProj1.ID)
+	assertLocked("project_shared/2", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &p2ID, ScopeType: identity.ScopeProjectShared}, mProj2.ID)
+	assertLocked("org_shared/via_p2", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &p2ID, ScopeType: identity.ScopeOrgShared}, mOrg.ID)
+	assertLocked("org_shared/via_nil", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: nil, ScopeType: identity.ScopeOrgShared}, mOrg.ID)
+	assertLocked("global_public/via_p2", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: &p2ID, ScopeType: identity.ScopeGlobalPublic}, mGlobal.ID)
+	assertLocked("global_public/via_nil", identity.MemoryScopeTarget{TenantID: f.tenantID, ProjectID: nil, ScopeType: identity.ScopeGlobalPublic}, mGlobal.ID)
+
+	// READ COMMITTED visibility directly inside store.ExecTx: committed concurrent update becomes visible to open tx.
+	if err := store.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
+		before, err := reg.Memories().GetMemoryByID(ctx, f.tenantID, mOrg.ID)
+		if err != nil {
+			return err
+		}
+		if before.Version != 1 {
+			return fmt.Errorf("expected version 1 before concurrent commit, got %d", before.Version)
+		}
+		if err := store.ExecTx(ctx, func(ext memory.RepositoryRegistry) error {
+			updated := *before
+			updated.Version = 2
+			updated.Summary = "updated-concurrently"
+			updated.UpdatedAt = now.Add(time.Minute)
+			return ext.Memories().UpdateMemoryState(ctx, updated)
+		}); err != nil {
+			return fmt.Errorf("external UpdateMemoryState: %w", err)
+		}
+		after, err := reg.Memories().GetMemoryByID(ctx, f.tenantID, mOrg.ID)
+		if err != nil {
+			return err
+		}
+		if after.Version != 2 || after.Summary != "updated-concurrently" {
+			return fmt.Errorf("expected open ExecTx READ COMMITTED to observe version 2, got v%d (%q)", after.Version, after.Summary)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("ExecTx READ COMMITTED visibility test failed: %v", err)
+	}
+
+	// READ COMMITTED permission revocation directly inside OpaqueRequestStore.Execute.
+	auditGrant := memory.AuditEvent{
+		ID: uuid.New(), TenantID: &f.tenantID, PrincipalID: &f.principalID,
+		Operation: "grant", ResourceType: "task_permission", Outcome: memory.AuditAllowed, CreatedAt: now,
+	}
+	if err := store.GrantOrRevokeTaskPermission(ctx, postgres.TaskPermissionGrant{
+		TenantID: f.tenantID, ProjectID: f.projectID, TaskID: "task-exec-rc", PrincipalID: f.principalID, CanRead: true, CanWrite: true,
+	}, auditGrant); err != nil {
+		t.Fatalf("grant task-exec-rc: %v", err)
+	}
+
+	queue := store.OpaqueRequests(30 * time.Second)
+	execRec, err := queue.Enqueue(ctx, postgres.OpaqueRequest{
+		TenantID: f.tenantID, ProjectID: f.projectID, TaskID: "task-exec-rc", PrincipalID: f.principalID,
+		Operation: postgres.OpaqueOpCapture, PayloadVersion: 1, Payload: json.RawMessage(`{"k":1}`),
+		RequestSHA256: sha256Hex("exec-rc"), IdempotencyKey: "exec-rc-key",
+	})
+	if err != nil {
+		t.Fatalf("Enqueue exec-rc: %v", err)
+	}
+	execLease, err := queue.Claim(ctx)
+	if err != nil || execLease == nil || execLease.RequestID != execRec.RequestID {
+		t.Fatalf("Claim exec-rc: lease=%+v err=%v", execLease, err)
+	}
+
+	errRevokedInTx := errors.New("revoked during execute")
+	err = queue.Execute(ctx, *execLease, func(ctx context.Context, reg memory.RepositoryRegistry, perms identity.TaskPermissionReader, req postgres.OpaqueRequestRecord) (*uuid.UUID, error) {
+		okBefore, err := perms.HasTaskPermission(ctx, identity.TaskPermissionQuery{
+			TenantID: req.TenantID, ProjectID: req.ProjectID, PrincipalID: req.PrincipalID, TaskID: req.TaskID, Permission: identity.TaskWrite,
+		})
+		if err != nil || !okBefore {
+			return nil, fmt.Errorf("expected allowed before external revoke, got ok=%v err=%w", okBefore, err)
+		}
+		revokeAudit := auditGrant
+		revokeAudit.ID = uuid.New()
+		revokeAudit.Operation = "revoke"
+		if err := store.GrantOrRevokeTaskPermission(ctx, postgres.TaskPermissionGrant{
+			TenantID: req.TenantID, ProjectID: req.ProjectID, TaskID: req.TaskID, PrincipalID: req.PrincipalID, CanRead: false, CanWrite: false,
+		}, revokeAudit); err != nil {
+			return nil, err
+		}
+		okAfter, err := perms.HasTaskPermission(ctx, identity.TaskPermissionQuery{
+			TenantID: req.TenantID, ProjectID: req.ProjectID, PrincipalID: req.PrincipalID, TaskID: req.TaskID, Permission: identity.TaskWrite,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if okAfter {
+			return nil, errors.New("expected READ COMMITTED Execute tx to observe committed revocation")
+		}
+		return nil, errRevokedInTx
+	})
+	if !errors.Is(err, errRevokedInTx) {
+		t.Fatalf("expected Execute to return errRevokedInTx after mid-tx revocation check, got %v", err)
+	}
+
+	// Zero-retry OpaqueRequest fails permanently on the first transient RecordFailure.
+	zero := int32(0)
+	zeroRec, err := queue.Enqueue(ctx, postgres.OpaqueRequest{
+		TenantID: f.tenantID, ProjectID: f.projectID, TaskID: "task-exec-rc", PrincipalID: f.principalID,
+		Operation: postgres.OpaqueOpCapture, PayloadVersion: 1, Payload: json.RawMessage(`{"zero":true}`),
+		RequestSHA256: sha256Hex("zero-retry"), IdempotencyKey: "zero-retry-key", MaxRetries: &zero,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue zero retry: %v", err)
+	}
+	// Mark execRec failed permanently first so queue.Claim picks zeroRec cleanly.
+	if err := queue.RecordFailure(ctx, *execLease, postgres.FailurePermanent, "REVOKED", "aborted by test"); err != nil {
+		t.Fatalf("fail execRec cleanly: %v", err)
+	}
+	zeroLease, err := queue.Claim(ctx)
+	if err != nil || zeroLease == nil || zeroLease.RequestID != zeroRec.RequestID {
+		t.Fatalf("Claim zeroRec: lease=%+v err=%v", zeroLease, err)
+	}
+	if err := queue.RecordFailure(ctx, *zeroLease, postgres.FailureTransient, "TRANSIENT_ZERO", "fail fast"); err != nil {
+		t.Fatalf("RecordFailure zero retry: %v", err)
+	}
+	zeroMeta, err := queue.GetStatus(ctx, f.tenantID, zeroRec.RequestID)
+	if err != nil || zeroMeta.Status != postgres.OpaqueStatusFailed {
+		t.Fatalf("expected terminal failed immediately for MaxRetries=0, got %+v err=%v", zeroMeta, err)
 	}
 }

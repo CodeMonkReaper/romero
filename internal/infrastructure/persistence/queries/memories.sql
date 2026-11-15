@@ -118,7 +118,7 @@ WHERE tenant_id = @tenant_id
   AND topic_key = @topic_key
   AND (
       (@scope_type::scope_type_enum IN ('org_shared', 'global_public'))
-      OR (project_id = sqlc.narg(project_id)::uuid)
+      OR (COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE(sqlc.narg(project_id)::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
   )
   AND (
       (@scope_type::scope_type_enum <> 'agent_private')

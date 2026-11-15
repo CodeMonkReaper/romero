@@ -13,19 +13,21 @@ import (
 
 const evaluateTaskAccessSnapshot = `-- name: EvaluateTaskAccessSnapshot :one
 SELECT
-    (
+    COALESCE(
         pr.id = $1::uuid
         AND p.allowed_projects IS NOT NULL
         AND $1::uuid = ANY(p.allowed_projects)
         AND 'task_shared' = ANY(p.allowed_scopes)
-        AND COALESCE(tp.can_read, FALSE)
+        AND COALESCE(tp.can_read, FALSE),
+        FALSE
     )::boolean AS can_read,
-    (
+    COALESCE(
         pr.id = $1::uuid
         AND p.allowed_projects IS NOT NULL
         AND $1::uuid = ANY(p.allowed_projects)
         AND 'task_shared' = ANY(p.allowed_scopes)
-        AND COALESCE(tp.can_write, FALSE)
+        AND COALESCE(tp.can_write, FALSE),
+        FALSE
     )::boolean AS can_write
 FROM principals p
 JOIN tenants t

@@ -267,20 +267,52 @@ func TestTaskAuthorizationAndOpaqueRequestsMigrationContract(t *testing.T) {
 		"uq_projects_tenant_id",
 		"uq_principals_tenant_id",
 		"CREATE TABLE task_permissions (",
-		"FOREIGN KEY (tenant_id, project_id) REFERENCES projects(tenant_id, id) ON DELETE CASCADE",
-		"FOREIGN KEY (tenant_id, principal_id) REFERENCES principals(tenant_id, id) ON DELETE CASCADE",
-		"CONSTRAINT uq_task_permissions_tuple UNIQUE (tenant_id, project_id, task_id, principal_id)",
 		"CREATE TABLE opaque_memory_requests (",
 		"idx_opaque_requests_idempotency",
 		"ON opaque_memory_requests(tenant_id, principal_id, idempotency_key)",
 		"WHERE idempotency_key IS NOT NULL",
-		"idx_memories_active_topic_key",
-		"scope_type IN ('org_shared', 'global_public')",
 	}
 	for _, frag := range requiredUpFragments {
 		if !strings.Contains(upSQL, frag) {
 			t.Errorf("00003 up migration missing required fragment %q", frag)
 		}
+	}
+
+	taskPermBlock := extractBlock(t, upSQL, "CREATE TABLE task_permissions (", ");")
+	for _, fk := range []string{
+		"FOREIGN KEY (tenant_id, project_id) REFERENCES projects(tenant_id, id) ON DELETE CASCADE",
+		"FOREIGN KEY (tenant_id, principal_id) REFERENCES principals(tenant_id, id) ON DELETE CASCADE",
+		"CONSTRAINT uq_task_permissions_tuple UNIQUE (tenant_id, project_id, task_id, principal_id)",
+	} {
+		if !strings.Contains(taskPermBlock, fk) {
+			t.Errorf("task_permissions missing %q", fk)
+		}
+	}
+
+	opaqueBlock := extractBlock(t, upSQL, "CREATE TABLE opaque_memory_requests (", ");")
+	for _, fk := range []string{
+		"FOREIGN KEY (tenant_id, project_id) REFERENCES projects(tenant_id, id) ON DELETE CASCADE",
+		"FOREIGN KEY (tenant_id, principal_id) REFERENCES principals(tenant_id, id) ON DELETE CASCADE",
+	} {
+		if !strings.Contains(opaqueBlock, fk) {
+			t.Errorf("opaque_memory_requests missing composite %q", fk)
+		}
+	}
+
+	dupCheckBlock := extractBlock(t, upSQL, "DO $$", "END $$;")
+	if !strings.Contains(dupCheckBlock, "scope_type IN ('org_shared', 'global_public')") {
+		t.Errorf("00003 duplicate check block missing org_shared and global_public")
+	}
+
+	upIdxBlock := extractBlock(t, upSQL, "CREATE UNIQUE INDEX idx_memories_active_topic_key", ";")
+	if !strings.Contains(upIdxBlock, "scope_type IN ('org_shared', 'global_public')") {
+		t.Errorf("00003 up idx_memories_active_topic_key missing org_shared and global_public normalization")
+	}
+
+	downIdxBlock := extractBlock(t, downSQL, "CREATE UNIQUE INDEX idx_memories_active_topic_key", ";")
+	if !strings.Contains(downIdxBlock, "COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid),") ||
+		strings.Contains(downIdxBlock, "scope_type IN ('org_shared', 'global_public')") {
+		t.Errorf("00003 down idx_memories_active_topic_key must restore original 00001 definition")
 	}
 
 	requiredDownOrder := []string{
