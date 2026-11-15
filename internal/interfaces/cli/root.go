@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,6 +43,7 @@ func NewRootCmd(deps Dependencies) *cobra.Command {
 		newTaskPermissionCmd(&gf, deps),
 		newServeCmd(&gf, deps),
 		newEvalCmd(deps),
+		newConsolidateCmd(&gf, deps),
 	)
 	return root
 }
@@ -460,8 +462,8 @@ func newEvalCmd(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if !rep.Pass {
-				return fmt.Errorf("cognitive evaluation failed thresholds: ndcg@5=%.3f multihop=%.3f obsolete=%.3f leakage=%.4f",
-					rep.NDCGAt5, rep.MultiHopRecall, rep.ObsoleteSuppressionRate, rep.ZeroTrustLeakageRate)
+				return fmt.Errorf("cognitive evaluation failed thresholds: ndcg@5=%.3f multihop=%.3f obsolete=%.3f leakage=%.4f contradiction=%.3f rem_distill=%.3f",
+					rep.NDCGAt5, rep.MultiHopRecall, rep.ObsoleteSuppressionRate, rep.ZeroTrustLeakageRate, rep.ContradictionCatchRate, rep.REMDistillationRatio)
 			}
 			return nil
 		},
@@ -470,5 +472,52 @@ func newEvalCmd(deps Dependencies) *cobra.Command {
 	f.StringVar(&datasetPath, "dataset", "tests/evaluation/golden_dataset.json", "path to golden evaluation dataset JSON")
 	f.IntVar(&maxTokens, "max-tokens", 2048, "token budget for BuildContext evaluation")
 	f.IntVar(&hops, "hops", 2, "spreading activation hop depth [1..3]")
+	return cmd
+}
+
+func newConsolidateCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
+	var (
+		projectIDStr string
+		dryRun       bool
+		apiKey       string
+	)
+	cmd := &cobra.Command{
+		Use:   "consolidate",
+		Short: "Run REM sleep episodic consolidation on demand",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if deps.Consolidate == nil {
+				return errors.New("consolidate dependency is not configured")
+			}
+			dsn, err := resolveDSN(gf.dsn, gf.configPath)
+			if err != nil {
+				return err
+			}
+			rawKey := strings.TrimSpace(apiKey)
+			if rawKey == "" {
+				rawKey = strings.TrimSpace(os.Getenv("ROMERO_API_KEY"))
+			}
+			if rawKey == "" {
+				return errors.New("admin api key is required via --api-key or ROMERO_API_KEY")
+			}
+			var projectID *uuid.UUID
+			if strings.TrimSpace(projectIDStr) != "" {
+				parsed, err := uuid.Parse(strings.TrimSpace(projectIDStr))
+				if err != nil {
+					return fmt.Errorf("invalid --project-id: %w", err)
+				}
+				projectID = &parsed
+			}
+			res, err := deps.Consolidate(cmd.Context(), dsn, rawKey, projectID, dryRun)
+			if err != nil {
+				return err
+			}
+			return writeJSON(cmd.OutOrStdout(), res)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&projectIDStr, "project-id", "", "optional project UUID to scope consolidation")
+	f.BoolVar(&dryRun, "dry-run", false, "evaluate clusters and NLI validation without persisting changes")
+	f.StringVar(&apiKey, "api-key", "", "admin API key (overrides ROMERO_API_KEY)")
 	return cmd
 }

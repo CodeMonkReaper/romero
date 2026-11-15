@@ -16,9 +16,11 @@ import (
 
 	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/retrieval"
+	"github.com/romero-project/romero/internal/domain/governor"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/infrastructure/cachel1"
+	"github.com/romero-project/romero/internal/infrastructure/neural"
 )
 
 // Report summarizes Level 2 Cognitive Evaluation metrics over a golden dataset.
@@ -29,13 +31,24 @@ type Report struct {
 	MultiHopRecall          float64 `json:"multi_hop_recall"`
 	ObsoleteSuppressionRate float64 `json:"obsolete_suppression_rate"`
 	ZeroTrustLeakageRate    float64 `json:"zero_trust_leakage_rate"`
+	ContradictionCatchRate  float64 `json:"contradiction_catch_rate"`
+	REMDistillationRatio    float64 `json:"rem_distillation_ratio"`
 	Pass                    bool    `json:"pass"`
 }
 
 type goldenDataset struct {
-	Memories  []goldenMemory   `json:"memories"`
-	Relations []goldenRelation `json:"relations"`
-	Queries   []goldenQuery    `json:"queries"`
+	Memories    []goldenMemory   `json:"memories"`
+	Relations   []goldenRelation `json:"relations"`
+	Queries     []goldenQuery    `json:"queries"`
+	NLIPairs    []goldenNLIPair  `json:"nli_pairs,omitempty"`
+	REMEpisodes []goldenMemory   `json:"rem_episodes,omitempty"`
+}
+
+type goldenNLIPair struct {
+	Name           string `json:"name"`
+	Premise        string `json:"premise"`
+	Hypothesis     string `json:"hypothesis"`
+	ExpectedAction string `json:"expected_action"`
 }
 
 type goldenMemory struct {
@@ -159,6 +172,7 @@ func RunDataset(ctx context.Context, datasetPath string, maxTokens, hops int) (*
 		return nil, err
 	}
 	retSvc.SetHybridDeps(repo, embedder, l1)
+	retSvc.WithReranker(neural.DeterministicReranker{}, governor.ProfileUltra)
 
 	ctxSvc, err := contextbuilder.NewService(retSvc, repo, func() time.Time { return now })
 	if err != nil {
@@ -246,7 +260,21 @@ func RunDataset(ctx context.Context, datasetPath string, maxTokens, hops int) (*
 		leakage = float64(forbiddenLeaked) / float64(forbiddenChecked)
 	}
 
-	pass := ndcg >= 0.85 && multiHopRecall == 1.0 && obsoleteSuppression == 1.0 && leakage == 0.0
+	contradictionCatchRate, err := evaluateNLIContradictions(ctx, ds.NLIPairs)
+	if err != nil {
+		return nil, err
+	}
+	remDistillationRatio, err := evaluateREMConsolidation(ctx, tenantID, projectID, callerAgent, now, ds.REMEpisodes)
+	if err != nil {
+		return nil, err
+	}
+
+	pass := ndcg >= 0.85 &&
+		multiHopRecall == 1.0 &&
+		obsoleteSuppression == 1.0 &&
+		leakage == 0.0 &&
+		contradictionCatchRate > 0.90 &&
+		remDistillationRatio > 0.0
 	return &Report{
 		DatasetPath:             datasetPath,
 		CasesEvaluated:          len(ds.Queries),
@@ -254,8 +282,123 @@ func RunDataset(ctx context.Context, datasetPath string, maxTokens, hops int) (*
 		MultiHopRecall:          multiHopRecall,
 		ObsoleteSuppressionRate: obsoleteSuppression,
 		ZeroTrustLeakageRate:    leakage,
+		ContradictionCatchRate:  contradictionCatchRate,
+		REMDistillationRatio:    remDistillationRatio,
 		Pass:                    pass,
 	}, nil
+}
+
+func evaluateNLIContradictions(ctx context.Context, pairs []goldenNLIPair) (float64, error) {
+	if len(pairs) == 0 {
+		return 1.0, nil
+	}
+	nli := neural.DeterministicNLIProvider{}
+	inputs := make([]memory.NLIPairInput, len(pairs))
+	for i, p := range pairs {
+		inputs[i] = memory.NLIPairInput{
+			Premise:    p.Premise,
+			Hypothesis: p.Hypothesis,
+		}
+	}
+	scores, err := nli.EvaluatePairs(ctx, inputs)
+	if err != nil {
+		return 0, fmt.Errorf("evaluate deterministic NLI pairs: %w", err)
+	}
+	var expectedContradictions, caughtContradictions int
+	for i, p := range pairs {
+		decision := memory.EvaluateNLIDecision(
+			memory.Memory{ID: uuid.New(), Summary: p.Premise},
+			memory.Memory{ID: uuid.New(), Summary: p.Hypothesis},
+			scores[i],
+		)
+		expected := strings.ToLower(strings.TrimSpace(p.ExpectedAction))
+		switch expected {
+		case string(memory.NLIDecisionContradicts):
+			expectedContradictions++
+			if decision.Action == memory.NLIDecisionContradicts {
+				caughtContradictions++
+			}
+		case string(memory.NLIDecisionSupports):
+			if decision.Action == memory.NLIDecisionContradicts {
+				return 0, fmt.Errorf("nli pair %q falsely classified supports as contradicts", p.Name)
+			}
+		}
+	}
+	if expectedContradictions == 0 {
+		return 1.0, nil
+	}
+	return float64(caughtContradictions) / float64(expectedContradictions), nil
+}
+
+func evaluateREMConsolidation(
+	ctx context.Context,
+	tenantID, projectID, callerAgent uuid.UUID,
+	now time.Time,
+	episodes []goldenMemory,
+) (float64, error) {
+	if len(episodes) == 0 {
+		return 0.0, nil
+	}
+	mems := make([]memory.Memory, 0, len(episodes))
+	vecs := make(map[uuid.UUID][]float32, len(episodes))
+	for _, gm := range episodes {
+		var ownerID *uuid.UUID
+		if gm.Owner == "caller" {
+			id := callerAgent
+			ownerID = &id
+		}
+		pid := projectID
+		mems = append(mems, memory.Memory{
+			ID:              gm.ID,
+			TenantID:        tenantID,
+			ProjectID:       &pid,
+			OwnerAgentID:    ownerID,
+			ScopeType:       gm.ScopeType,
+			Type:            gm.Type,
+			Status:          gm.Status,
+			EpistemicStatus: gm.EpistemicStatus,
+			Confidence:      gm.Confidence,
+			Importance:      gm.Importance,
+			UtilityScore:    gm.UtilityScore,
+			TopicKey:        gm.TopicKey,
+			Summary:         gm.Summary,
+			Content:         gm.Content,
+			Tags:            gm.Tags,
+			UpdatedAt:       now,
+		})
+		if len(gm.DenseVec) > 0 {
+			vecs[gm.ID] = gm.DenseVec
+		}
+	}
+
+	clusters := memory.ClusterEpisodicMemories(mems, vecs)
+	if len(clusters) == 0 {
+		return 0.0, nil
+	}
+	slm := &neural.DeterministicSLMConsolidator{}
+	nli := neural.DeterministicNLIProvider{}
+	distilledOK := 0
+	for _, cluster := range clusters {
+		draft, err := slm.DistillCluster(ctx, cluster.Episodes)
+		if err != nil {
+			return 0, fmt.Errorf("deterministic SLM distill cluster: %w", err)
+		}
+		pairs := make([]memory.NLIPairInput, 0, len(cluster.Episodes)*2)
+		for _, ep := range cluster.Episodes {
+			pairs = append(pairs, memory.NLIPairInput{
+				Premise:    draft.Summary + "\n" + draft.Content,
+				Hypothesis: ep.Summary + "\n" + ep.Content,
+			})
+		}
+		scores, err := nli.EvaluatePairs(ctx, pairs)
+		if err != nil {
+			return 0, fmt.Errorf("deterministic NLI validate distilled draft: %w", err)
+		}
+		if memory.ValidateDistilledNLI(scores, nil) {
+			distilledOK++
+		}
+	}
+	return float64(distilledOK) / float64(len(clusters)), nil
 }
 
 func computeNDCGAt5(actual, expected []uuid.UUID) float64 {

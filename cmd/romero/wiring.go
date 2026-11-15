@@ -16,6 +16,8 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/romero-project/romero/internal/application/capture"
+	"github.com/romero-project/romero/internal/application/conflicts"
+	"github.com/romero-project/romero/internal/application/consolidation"
 	contextbuilder "github.com/romero-project/romero/internal/application/context"
 	"github.com/romero-project/romero/internal/application/eval"
 	"github.com/romero-project/romero/internal/application/feedback"
@@ -23,6 +25,7 @@ import (
 	"github.com/romero-project/romero/internal/application/provisioning"
 	"github.com/romero-project/romero/internal/application/requests"
 	"github.com/romero-project/romero/internal/application/retrieval"
+	"github.com/romero-project/romero/internal/domain/governor"
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
 	"github.com/romero-project/romero/internal/infrastructure/cachel1"
@@ -39,6 +42,7 @@ func defaultDependencies() cli.Dependencies {
 		OpenProvisioner: openPostgresProvisioner,
 		Serve:           servePostgresServer,
 		Eval:            eval.RunDataset,
+		Consolidate:     runPostgresConsolidation,
 	}
 }
 
@@ -324,6 +328,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		BaseURL: bgeURL,
 		Enabled: bgeURL != "",
 	})
+	rerankerClient, nliClient, slmClient, gov, profile := buildNeuralAndGovernor()
 	l1Graph := cachel1.NewCognitiveGraph(store.Search())
 
 	capSvc, err := capture.NewService(store, audit, pgCaptureAccess{r: taskPerms}, pgCaptureOpaque{o: opaqueStore}, nil)
@@ -337,6 +342,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		return err
 	}
 	retSvc.SetHybridDeps(store.Search(), bgeClient, l1Graph)
+	retSvc.WithReranker(rerankerClient, profile)
 
 	ctxSvc, err := contextbuilder.NewService(retSvc, audit, nil)
 	if err != nil {
@@ -349,6 +355,16 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 	}
 	fbSvc.SetGraphNotifier(l1Graph)
 
+	conflictSvc, err := conflicts.NewService(store, store.Conflicts(), audit, pgIdentityTaskReader{r: taskPerms}, l1Graph, nil)
+	if err != nil {
+		return err
+	}
+
+	consSvc, err := consolidation.NewService(store, store.Consolidation(), slmClient, nliClient, audit, l1Graph, gov, nil)
+	if err != nil {
+		return err
+	}
+
 	worker, err := requests.NewWorker(
 		pgWorkerQueue{o: opaqueStore},
 		pgPrincipalResolver{repo: repo},
@@ -359,17 +375,21 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		return err
 	}
 
-	embWorker := jobs.NewEmbeddingWorker(store.JobQueue(), store.Search(), store.Embeddings(), bgeClient, l1Graph, jobs.EmbeddingWorkerConfig{}, nil)
+	embWorker := jobs.NewEmbeddingWorker(store.JobQueue(), store.Search(), store.Embeddings(), bgeClient, l1Graph, jobs.EmbeddingWorkerConfig{}, nil).
+		WithNLI(store, store.SemanticNeighbors(), nliClient)
 
 	handler, _, err := rest.NewRouter(rest.RouterDeps{
-		Auth:      auth,
-		Capture:   capSvc,
-		Retrieval: retSvc,
-		Context:   ctxSvc,
-		Feedback:  fbSvc,
-		DB:        pool,
-		L1Stats:   l1Graph,
-		Version:   cli.Version,
+		Auth:          auth,
+		Capture:       capSvc,
+		Retrieval:     retSvc,
+		Context:       ctxSvc,
+		Feedback:      fbSvc,
+		Conflicts:     conflictSvc,
+		Consolidation: consSvc,
+		Governor:      gov,
+		DB:            pool,
+		L1Stats:       l1Graph,
+		Version:       cli.Version,
 	})
 	if err != nil {
 		return err
@@ -580,4 +600,98 @@ func (q pgWorkerQueue) RecordFailure(ctx context.Context, lease requests.Lease, 
 
 func (q pgWorkerQueue) PurgeTerminal(ctx context.Context, retention time.Duration) (int64, error) {
 	return q.o.PurgeTerminal(ctx, retention)
+}
+
+type pgIdentityTaskReader struct {
+	r *postgres.TaskPermissionRepository
+}
+
+func (a pgIdentityTaskReader) HasTaskPermission(ctx context.Context, q identity.TaskPermissionQuery) (bool, error) {
+	s, err := a.r.EvaluateTaskAccess(ctx, q)
+	if err != nil {
+		return false, err
+	}
+	if q.Permission == identity.TaskWrite {
+		return s.CanWrite, nil
+	}
+	return s.CanRead, nil
+}
+
+func buildNeuralAndGovernor() (
+	*neural.RerankerClient,
+	*neural.DeBERTaNLIClient,
+	*neural.QwenSLMClient,
+	*governor.PowerGovernor,
+	governor.Profile,
+) {
+	profile := governor.Profile(strings.ToLower(strings.TrimSpace(os.Getenv("ROMERO_PROFILE"))))
+	switch profile {
+	case governor.ProfileLite, governor.ProfileBalanced, governor.ProfileUltra:
+	default:
+		profile = governor.ProfileBalanced
+	}
+
+	rerankerURL := strings.TrimSpace(os.Getenv("ROMERO_RERANKER_URL"))
+	rerankerClient := neural.NewRerankerClient(neural.RerankerConfig{
+		BaseURL: rerankerURL,
+		Enabled: rerankerURL != "" && profile == governor.ProfileUltra,
+	})
+
+	nliURL := strings.TrimSpace(os.Getenv("ROMERO_NLI_URL"))
+	nliClient := neural.NewDeBERTaNLIClient(neural.NLIConfig{
+		BaseURL: nliURL,
+		Enabled: nliURL != "",
+	})
+
+	slmURL := strings.TrimSpace(os.Getenv("ROMERO_SLM_URL"))
+	slmClient := neural.NewQwenSLMClient(neural.SLMConfig{
+		BaseURL: slmURL,
+		Enabled: slmURL != "",
+	})
+
+	gov := governor.NewPowerGovernor(governor.Config{
+		Profile:           profile,
+		OnUnloadVRAM:      slmClient.UnloadVRAM,
+		RerankerAvailable: rerankerURL != "" && profile == governor.ProfileUltra,
+		NLIAvailable:      nliURL != "",
+		SLMAvailable:      slmURL != "",
+	})
+	return rerankerClient, nliClient, slmClient, gov, profile
+}
+
+func runPostgresConsolidation(ctx context.Context, dsn, rawAPIKey string, projectID *uuid.UUID, dryRun bool) (*consolidation.ConsolidateResult, error) {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping postgres: %w", err)
+	}
+
+	store, err := postgres.NewStore(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	repo := newPostgresAdapter(pgStoreWrapper{ProvisioningStore: store.Provisioning()})
+	audit := store.Audit()
+	auth := provisioning.NewAuthenticator(repo, audit)
+	caller, err := auth.Authenticate(ctx, rawAPIKey)
+	if err != nil {
+		return nil, err
+	}
+
+	_, nliClient, slmClient, gov, _ := buildNeuralAndGovernor()
+	l1Graph := cachel1.NewCognitiveGraph(store.Search())
+	consSvc, err := consolidation.NewService(store, store.Consolidation(), slmClient, nliClient, audit, l1Graph, gov, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return consSvc.Consolidate(ctx, caller, consolidation.ConsolidateCommand{
+		ProjectID: projectID,
+		DryRun:    dryRun,
+	})
 }
