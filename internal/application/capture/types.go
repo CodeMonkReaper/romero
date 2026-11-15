@@ -98,6 +98,7 @@ type CaptureCommand struct {
 	ObservedAt       *time.Time
 	ValidFrom        *time.Time
 	ValidUntil       *time.Time
+	Relations        []memory.ExplicitRelationInput
 	IdempotencyKey   string
 	CorrelationID    string
 }

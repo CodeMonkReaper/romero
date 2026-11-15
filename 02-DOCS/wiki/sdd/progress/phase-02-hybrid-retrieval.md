@@ -7,11 +7,18 @@
 | `T001` | [#27](https://github.com/CodeMonkReaper/romero/issues/27) | `verified` | — | `AC-01`..`AC-05`, `AC-07`, `AC-09`..`AC-11` | `1` |
 | `T002` | [#28](https://github.com/CodeMonkReaper/romero/issues/28) | `verified` | — | `AC-01`..`AC-03`, `AC-05`, `AC-08`..`AC-12` | `1` |
 | `T003` | [#29](https://github.com/CodeMonkReaper/romero/issues/29) | `verified` | `T001` (`#27`), `T002` (`#28`) | `AC-02`, `AC-03`, `AC-06`, `AC-08`..`AC-10` | `1` |
-| `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
+| `T004` | [#30](https://github.com/CodeMonkReaper/romero/issues/30) | `verified` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-05`, `AC-06`, `AC-11` | `1` |
 | `T005` | [#31](https://github.com/CodeMonkReaper/romero/issues/31) | `ready-for-agent` | `T001` (`#27`), `T002` (`#28`), `T003` (`#29`) | `AC-01`..`AC-07`, `AC-09`, `AC-10`, `AC-12` | `1` |
 | `T006` | [#32](https://github.com/CodeMonkReaper/romero/issues/32) | `ready-for-agent` | `T004` (`#30`), `T005` (`#31`) | `AC-01`..`AC-03`, `AC-05`, `AC-07`, `AC-09`..`AC-12` | `1` |
 | `T007` | [#33](https://github.com/CodeMonkReaper/romero/issues/33) | `ready-for-agent` | `T006` (`#32`) | `AC-01`..`AC-12` | `1` |
 | `T008` | [#34](https://github.com/CodeMonkReaper/romero/issues/34) | `ready-for-agent` | `T001`–`T007` (`#27`–`#33`) | `all ACs` | — |
+
+## T004 — 2026-11-15 — verified
+- issue: https://github.com/CodeMonkReaper/romero/issues/30
+- branch: `feat/t004-phase02-capture-relations-l1` (base `9dd237f`)
+- controls (`go1.27.3`): `gofmt -s -w` PASS, `go vet ./...` PASS, `CGO_ENABLED=0 go build ./...` PASS, `go test -count=1 -cover ./internal/application/capture/... ./internal/application/feedback/... ./internal/application/requests/...` PASS (`capture`: `85.0%`, `feedback`: `86.9%`, `requests`: `85.9%`).
+- risk & review: `rsc risk --base main` computed **Tier 1** (`classes: default`, `reviewers: 1`, `humanApproval: false`). Fresh-context Tier 1 Reviewer (`00ff3bfe`): Round 1 returned `6 findings: 4 blockers, 2 nits` (`changes-needed`); Round 2 (`e85f714`) resolved all blockers/nits (L1 delta sync with exact persisted IDs across capture/topic_key/supersede/feedback/corrected_by_user, opaque same-task relation validation, >=85% coverage) -> `0 findings: 0 blockers, 0 nits` (`VERDICT: approved`).
+- traceability: `AC-05`, `AC-06`, `AC-11`.
 
 ## T003 — 2026-11-15 — verified
 - issue: https://github.com/CodeMonkReaper/romero/issues/29

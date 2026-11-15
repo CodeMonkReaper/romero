@@ -337,6 +337,9 @@ func (e *ServiceExecutor) ExecuteOpaqueOperationTx(
 ) (*uuid.UUID, error) {
 	switch op {
 	case OpaqueOpCapture:
+		if e.Capture == nil {
+			return nil, fmt.Errorf("%w: capture service not configured", capture.ErrOperational)
+		}
 		var env struct {
 			Capture capture.CaptureCommand `json:"capture"`
 		}
@@ -346,12 +349,15 @@ func (e *ServiceExecutor) ExecuteOpaqueOperationTx(
 		if err := auth.CanAssignEpistemic(string(env.Capture.EpistemicStatus)); err != nil {
 			return nil, capture.ErrForbidden
 		}
-		v, _, err := e.Capture.ExecuteCaptureTx(ctx, reg, auth, env.Capture)
+		v, _, err := e.Capture.ExecuteOpaqueCaptureTx(ctx, reg, auth, env.Capture)
 		if err != nil {
 			return nil, err
 		}
 		return &v.ID, nil
 	case OpaqueOpFeedback:
+		if e.Feedback == nil {
+			return nil, fmt.Errorf("%w: feedback service not configured", feedback.ErrOperational)
+		}
 		var cmd feedback.FeedbackCommand
 		if err := json.Unmarshal(payload, &cmd); err != nil {
 			return nil, fmt.Errorf("%w: %v", feedback.ErrValidation, err)
@@ -368,6 +374,9 @@ func (e *ServiceExecutor) ExecuteOpaqueOperationTx(
 		}
 		return &res.MemoryID, nil
 	default:
+		if e.Capture == nil {
+			return nil, fmt.Errorf("%w: capture service not configured", capture.ErrOperational)
+		}
 		return e.Capture.ExecuteOpaqueTargetTx(ctx, reg, auth, string(op), targetID, payload)
 	}
 }

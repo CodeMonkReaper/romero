@@ -23,11 +23,17 @@ import (
 // Service orchestrates Zero-Trust memory capture, bitemporal updates, explicit
 // supersession, archival, and deferred opaque queuing for write-only task_shared actors.
 type Service struct {
-	uow    memory.UnitOfWork
-	audit  memory.AuditLogger
-	access TaskAccessChecker
-	opaque OpaqueRequestEnqueuer
-	clock  func() time.Time
+	uow           memory.UnitOfWork
+	audit         memory.AuditLogger
+	access        TaskAccessChecker
+	opaque        OpaqueRequestEnqueuer
+	graphNotifier memory.GraphMutationNotifier
+	clock         func() time.Time
+}
+
+// SetGraphNotifier attaches an optional write-through L1 Cognitive Graph notifier.
+func (s *Service) SetGraphNotifier(n memory.GraphMutationNotifier) {
+	s.graphNotifier = n
 }
 
 // NewService constructs a CaptureService with its required transactional and security ports.
@@ -95,17 +101,33 @@ func (s *Service) CaptureMemory(ctx context.Context, auth identity.AuthContext, 
 
 	var view *MemoryView
 	var created bool
+	var delta l1Delta
+	var denied bool
+	var deniedReason string
 	err = s.uow.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
-		v, cr, txErr := s.ExecuteCaptureTx(ctx, reg, auth, cmd)
+		v, cr, d, txErr := s.executeCaptureTxDetailed(ctx, reg, auth, cmd, false)
 		if txErr != nil {
+			if errors.Is(txErr, ErrNotFound) || errors.Is(txErr, ErrForbidden) {
+				denied = true
+				deniedReason = txErr.Error()
+			}
 			return txErr
 		}
 		view = v
 		created = cr
+		delta = d
 		return nil
 	})
+	if denied {
+		if auditErr := s.recordDenied(ctx, auth, "capture_memory", "memory", nil, string(cmd.ScopeType), cmd.CorrelationID, map[string]any{"reason": deniedReason}); auditErr != nil {
+			return nil, auditErr
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	if created && view != nil {
+		s.applyL1Delta(delta)
 	}
 	return &CaptureResult{Created: created, Memory: view}, nil
 }
@@ -164,6 +186,9 @@ func (s *Service) UpdateMemory(ctx context.Context, auth identity.AuthContext, m
 	if err != nil {
 		return nil, err
 	}
+	if out != nil && s.graphNotifier != nil {
+		s.graphNotifier.ApplyMemoryUpsert(MemoryFromView(out))
+	}
 	return &MutationResult{Memory: out}, nil
 }
 
@@ -197,6 +222,7 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 	}
 
 	var res *SupersedeResult
+	var delta l1Delta
 	var denied bool
 	var deniedReason string
 	var deniedScope string
@@ -269,10 +295,20 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 		}
 
 		if decision.CloseOldValidUntil {
-			if err := s.insertSupersedesRelationTx(ctx, reg, oldMem, newView.ID, newView.PrimarySourceID, cmd.ChangeReason, now); err != nil {
-				return err
+			supRel, relErr := s.insertSupersedesRelationTx(ctx, reg, oldMem, newView.ID, newView.PrimarySourceID, cmd.ChangeReason, now)
+			if relErr != nil {
+				return relErr
 			}
+			delta.relations = append(delta.relations, supRel)
+			delta.statusChanges = append(delta.statusChanges, l1StatusChange{
+				tenantID:   oldMem.TenantID,
+				projectID:  oldMem.ProjectID,
+				memoryID:   oldMem.ID,
+				status:     oldMem.Status,
+				validUntil: oldMem.Clocks.ValidUntil,
+			})
 		}
+		delta.upserts = append(delta.upserts, MemoryFromView(newView))
 
 		if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
 			ID:            uuid.New(),
@@ -304,6 +340,9 @@ func (s *Service) SupersedeMemory(ctx context.Context, auth identity.AuthContext
 	}
 	if err != nil {
 		return nil, err
+	}
+	if res != nil {
+		s.applyL1Delta(delta)
 	}
 	return res, nil
 }
@@ -404,6 +443,9 @@ func (s *Service) ArchiveMemory(ctx context.Context, auth identity.AuthContext, 
 	if err != nil {
 		return nil, err
 	}
+	if out != nil && s.graphNotifier != nil {
+		s.graphNotifier.ApplyMemoryStatusChange(out.TenantID, out.ProjectID, out.ID, out.Status, out.ValidUntil)
+	}
 	return &MutationResult{Memory: out}, nil
 }
 
@@ -415,21 +457,45 @@ func (s *Service) ExecuteCaptureTx(
 	auth identity.AuthContext,
 	cmd CaptureCommand,
 ) (*MemoryView, bool, error) {
+	v, cr, _, err := s.executeCaptureTxDetailed(ctx, reg, auth, cmd, false)
+	return v, cr, err
+}
+
+// ExecuteOpaqueCaptureTx executes a deferred opaque capture inside an existing transaction,
+// validating explicit relations against same-task task_shared targets even for write-only actors.
+func (s *Service) ExecuteOpaqueCaptureTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	cmd CaptureCommand,
+) (*MemoryView, bool, error) {
+	v, cr, _, err := s.executeCaptureTxDetailed(ctx, reg, auth, cmd, true)
+	return v, cr, err
+}
+
+func (s *Service) executeCaptureTxDetailed(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	cmd CaptureCommand,
+	opaqueTaskWrite bool,
+) (*MemoryView, bool, l1Delta, error) {
+	var delta l1Delta
 	sanitized, err := validateCaptureCommand(cmd)
 	if err != nil {
-		return nil, false, err
+		return nil, false, delta, err
 	}
 
 	if cmd.IdempotencyKey != "" {
 		existing, lookupErr := reg.Memories().GetMemoryByIdempotencyKey(ctx, auth.TenantID, cmd.IdempotencyKey)
 		if lookupErr == nil {
 			if existing.ContentSHA256 == sanitized.ContentSHA256 && existing.ScopeType == cmd.ScopeType {
-				return MemoryViewFromDomain(existing), false, nil
+				return MemoryViewFromDomain(existing), false, delta, nil
 			}
-			return nil, false, ErrConflict
+			return nil, false, delta, ErrConflict
 		}
 		if !errors.Is(lookupErr, memory.ErrNotFound) {
-			return nil, false, lookupErr
+			return nil, false, delta, lookupErr
 		}
 	}
 
@@ -448,12 +514,12 @@ func (s *Service) ExecuteCaptureTx(
 		}
 		activeOld, lockErr := reg.Memories().LockActiveTopicMemory(ctx, scopeTarget, cmd.TopicKey)
 		if lockErr != nil && !errors.Is(lockErr, memory.ErrNotFound) {
-			return nil, false, lockErr
+			return nil, false, delta, lockErr
 		}
 		if lockErr == nil && activeOld != nil {
 			decision, decErr := memory.DecideTopicSupersession(activeOld.EpistemicStatus, cmd.EpistemicStatus, false, auth.PrincipalType, "")
 			if decErr != nil {
-				return nil, false, decErr
+				return nil, false, delta, decErr
 			}
 			if decision.Outcome == memory.OutcomeSupersedeOld {
 				supersedingOld = activeOld
@@ -468,21 +534,31 @@ func (s *Service) ExecuteCaptureTx(
 	newID := uuid.New()
 	if supersedingOld != nil {
 		if err := s.closeAndSupersedeOldStateTx(ctx, reg, supersedingOld, newID, "superseded by topic_key", now); err != nil {
-			return nil, false, err
+			return nil, false, delta, err
 		}
+		delta.statusChanges = append(delta.statusChanges, l1StatusChange{
+			tenantID:   supersedingOld.TenantID,
+			projectID:  supersedingOld.ProjectID,
+			memoryID:   supersedingOld.ID,
+			status:     supersedingOld.Status,
+			validUntil: supersedingOld.Clocks.ValidUntil,
+		})
 	}
 
 	view, _, err := s.insertMemoryWithSourceTx(ctx, reg, auth, cmd, newStatus, newID, now)
 	if err != nil {
-		return nil, false, err
+		return nil, false, delta, err
 	}
+	delta.upserts = append(delta.upserts, MemoryFromView(view))
 
 	if supersedingOld != nil {
-		if err := s.insertSupersedesRelationTx(ctx, reg, supersedingOld, view.ID, view.PrimarySourceID, "superseded by topic_key", now); err != nil {
-			return nil, false, err
+		supRel, relErr := s.insertSupersedesRelationTx(ctx, reg, supersedingOld, view.ID, view.PrimarySourceID, "superseded by topic_key", now)
+		if relErr != nil {
+			return nil, false, delta, relErr
 		}
+		delta.relations = append(delta.relations, supRel)
 	} else if conflictingOld != nil {
-		if err := reg.Memories().InsertMemoryRelation(ctx, memory.MemoryRelation{
+		conflictRel := memory.MemoryRelation{
 			ID:           uuid.New(),
 			TenantID:     auth.TenantID,
 			ProjectID:    cmd.ProjectID,
@@ -495,10 +571,18 @@ func (s *Service) ExecuteCaptureTx(
 			IsActive:     true,
 			Notes:        "lower epistemic rank on active topic_key",
 			CreatedAt:    now,
-		}); err != nil {
-			return nil, false, err
 		}
+		if err := reg.Memories().InsertMemoryRelation(ctx, conflictRel); err != nil {
+			return nil, false, delta, err
+		}
+		delta.relations = append(delta.relations, conflictRel)
 	}
+
+	explicitRels, relErr := s.insertExplicitRelationsTx(ctx, reg, auth, view, cmd.Relations, now, opaqueTaskWrite)
+	if relErr != nil {
+		return nil, false, delta, relErr
+	}
+	delta.relations = append(delta.relations, explicitRels...)
 
 	if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
 		ID:            uuid.New(),
@@ -513,10 +597,10 @@ func (s *Service) ExecuteCaptureTx(
 		Outcome:       memory.AuditAllowed,
 		CreatedAt:     now,
 	}); err != nil {
-		return nil, false, err
+		return nil, false, delta, err
 	}
 
-	return view, true, nil
+	return view, true, delta, nil
 }
 
 // ExecuteSupersedeReplacementTx atomically closes oldMem as superseded and inserts a replacement
@@ -744,7 +828,7 @@ func (s *Service) executeSupersedeTx(
 		return nil, err
 	}
 	if closeOld {
-		if err := s.insertSupersedesRelationTx(ctx, reg, oldMem, newView.ID, newView.PrimarySourceID, reason, now); err != nil {
+		if _, err := s.insertSupersedesRelationTx(ctx, reg, oldMem, newView.ID, newView.PrimarySourceID, reason, now); err != nil {
 			return nil, err
 		}
 	}
@@ -930,8 +1014,8 @@ func (s *Service) insertSupersedesRelationTx(
 	sourceID uuid.UUID,
 	reason string,
 	now time.Time,
-) error {
-	return reg.Memories().InsertMemoryRelation(ctx, memory.MemoryRelation{
+) (memory.MemoryRelation, error) {
+	rel := memory.MemoryRelation{
 		ID:           uuid.New(),
 		TenantID:     oldMem.TenantID,
 		ProjectID:    oldMem.ProjectID,
@@ -944,7 +1028,11 @@ func (s *Service) insertSupersedesRelationTx(
 		IsActive:     true,
 		Notes:        reason,
 		CreatedAt:    now,
-	})
+	}
+	if err := reg.Memories().InsertMemoryRelation(ctx, rel); err != nil {
+		return memory.MemoryRelation{}, err
+	}
+	return rel, nil
 }
 
 func (s *Service) executeUpdateOnLoaded(
@@ -1293,6 +1381,9 @@ func validateCaptureCommand(cmd CaptureCommand) (security.SanitizedPayload, erro
 	if !isValidUnitFloat(cmd.Importance) {
 		return security.SanitizedPayload{}, fmt.Errorf("%w: importance must be within [0, 1]", ErrValidation)
 	}
+	if _, relErr := memory.ValidateExplicitRelations(cmd.Relations); relErr != nil {
+		return security.SanitizedPayload{}, fmt.Errorf("%w: %v", ErrValidation, relErr)
+	}
 	sanitized, err := security.SanitizeInput(cmd.Summary, cmd.Content)
 	if err != nil {
 		return security.SanitizedPayload{}, fmt.Errorf("%w: %v", ErrValidation, err)
@@ -1327,4 +1418,173 @@ func mapDomainWriteErr(err error) error {
 		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 	return ErrForbidden
+}
+
+func (s *Service) insertExplicitRelationsTx(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	fromView *MemoryView,
+	rels []memory.ExplicitRelationInput,
+	now time.Time,
+	opaqueTaskWrite bool,
+) ([]memory.MemoryRelation, error) {
+	validated, err := memory.ValidateExplicitRelations(rels)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	inserted := make([]memory.MemoryRelation, 0, len(validated))
+	for _, rel := range validated {
+		if rel.ToMemoryID == fromView.ID {
+			return nil, fmt.Errorf("%w: %v", ErrValidation, memory.ErrSelfLoopRelation)
+		}
+		target, getErr := reg.Memories().GetMemoryByID(ctx, auth.TenantID, rel.ToMemoryID)
+		if getErr != nil {
+			if errors.Is(getErr, memory.ErrNotFound) {
+				return nil, ErrNotFound
+			}
+			return nil, getErr
+		}
+		readable, checkErr := s.canLinkMemoryTarget(ctx, auth, fromView, target, opaqueTaskWrite)
+		if checkErr != nil {
+			return nil, checkErr
+		}
+		if !readable {
+			return nil, ErrNotFound
+		}
+		edge := memory.MemoryRelation{
+			ID:           uuid.New(),
+			TenantID:     auth.TenantID,
+			ProjectID:    fromView.ProjectID,
+			FromMemoryID: fromView.ID,
+			ToMemoryID:   target.ID,
+			RelationType: rel.RelationType,
+			Weight:       rel.Weight,
+			SourceID:     &fromView.PrimarySourceID,
+			ValidFrom:    now,
+			IsActive:     true,
+			Notes:        rel.Notes,
+			CreatedAt:    now,
+		}
+		if err := reg.Memories().InsertMemoryRelation(ctx, edge); err != nil {
+			return nil, err
+		}
+		inserted = append(inserted, edge)
+	}
+	return inserted, nil
+}
+
+func (s *Service) canLinkMemoryTarget(ctx context.Context, auth identity.AuthContext, fromView *MemoryView, target *memory.Memory, opaqueTaskWrite bool) (bool, error) {
+	if target == nil {
+		return false, nil
+	}
+	if opaqueTaskWrite && target.ScopeType == identity.ScopeTaskShared {
+		return target.TenantID == auth.TenantID &&
+			target.ProjectID != nil && fromView.ProjectID != nil && *target.ProjectID == *fromView.ProjectID &&
+			target.TaskID != "" && target.TaskID == fromView.TaskID, nil
+	}
+	return s.canReadMemoryTarget(ctx, auth, target)
+}
+
+func (s *Service) canReadMemoryTarget(ctx context.Context, auth identity.AuthContext, target *memory.Memory) (bool, error) {
+	if target == nil {
+		return false, nil
+	}
+	scopeTarget := identity.MemoryScopeTarget{
+		TenantID:     target.TenantID,
+		ProjectID:    target.ProjectID,
+		OwnerAgentID: target.OwnerAgentID,
+		ScopeType:    target.ScopeType,
+		TaskID:       target.TaskID,
+	}
+	if target.ScopeType == identity.ScopeTaskShared {
+		if target.ProjectID == nil || target.TaskID == "" || !slices.Contains(auth.AllowedScopes, identity.ScopeTaskShared) {
+			return false, nil
+		}
+		if !auth.IsAdmin && !slices.Contains(auth.AllowedProjects, *target.ProjectID) {
+			return false, nil
+		}
+		if s.access == nil {
+			return false, ErrOperational
+		}
+		snap, err := s.access.EvaluateTaskAccess(ctx, identity.TaskPermissionQuery{
+			TenantID:    auth.TenantID,
+			ProjectID:   *target.ProjectID,
+			TaskID:      target.TaskID,
+			PrincipalID: auth.PrincipalID,
+		})
+		if err != nil {
+			return false, fmt.Errorf("%w: %v", ErrOperational, err)
+		}
+		return snap.CanRead, nil
+	}
+	return auth.CanReadMemory(scopeTarget, ""), nil
+}
+
+type l1StatusChange struct {
+	tenantID   uuid.UUID
+	projectID  *uuid.UUID
+	memoryID   uuid.UUID
+	status     memory.MemoryStatus
+	validUntil *time.Time
+}
+
+type l1Delta struct {
+	upserts       []memory.Memory
+	statusChanges []l1StatusChange
+	relations     []memory.MemoryRelation
+}
+
+func (s *Service) applyL1Delta(delta l1Delta) {
+	if s.graphNotifier == nil {
+		return
+	}
+	for _, st := range delta.statusChanges {
+		s.graphNotifier.ApplyMemoryStatusChange(st.tenantID, st.projectID, st.memoryID, st.status, st.validUntil)
+	}
+	for _, m := range delta.upserts {
+		s.graphNotifier.ApplyMemoryUpsert(m)
+	}
+	if len(delta.relations) > 0 {
+		s.graphNotifier.ApplyRelationsAdded(delta.relations)
+	}
+}
+
+// MemoryFromView converts a capture MemoryView back into a domain memory.Memory for L1 synchronization.
+func MemoryFromView(v *MemoryView) memory.Memory {
+	return memory.Memory{
+		ID:              v.ID,
+		TenantID:        v.TenantID,
+		ProjectID:       v.ProjectID,
+		OwnerAgentID:    v.OwnerAgentID,
+		TaskID:          v.TaskID,
+		Type:            v.Type,
+		ScopeType:       v.ScopeType,
+		Status:          v.Status,
+		TopicKey:        v.TopicKey,
+		Summary:         v.Summary,
+		Content:         v.Content,
+		ContentSHA256:   v.ContentSHA256,
+		TokenCount:      v.TokenCount,
+		Tags:            append([]string(nil), v.Tags...),
+		Entities:        append([]string(nil), v.Entities...),
+		EpistemicStatus: v.EpistemicStatus,
+		AlphaScore:      v.AlphaScore,
+		BetaScore:       v.BetaScore,
+		Confidence:      v.Confidence,
+		Importance:      v.Importance,
+		UtilityScore:    v.UtilityScore,
+		AccessCount:     v.AccessCount,
+		Version:         v.Version,
+		NLIChecked:      v.NLIChecked,
+		PrimarySourceID: v.PrimarySourceID,
+		Clocks: memory.TriTemporalWindow{
+			ObservedAt: v.ObservedAt,
+			ValidFrom:  v.ValidFrom,
+			ValidUntil: v.ValidUntil,
+			CreatedAt:  v.CreatedAt,
+		},
+		UpdatedAt: v.UpdatedAt,
+		Metadata:  cloneMap(v.Metadata),
+	}
 }

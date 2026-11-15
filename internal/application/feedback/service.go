@@ -102,12 +102,18 @@ type FeedbackResult struct {
 
 // Service orchestrates Zero-Trust feedback recording, quarantine, and atomic replacement.
 type Service struct {
-	uow      memory.UnitOfWork
-	audit    memory.AuditLogger
-	access   TaskAccessChecker
-	opaque   OpaqueFeedbackEnqueuer
-	replacer ReplacementExecutor
-	clock    func() time.Time
+	uow           memory.UnitOfWork
+	audit         memory.AuditLogger
+	access        TaskAccessChecker
+	opaque        OpaqueFeedbackEnqueuer
+	replacer      ReplacementExecutor
+	graphNotifier memory.GraphMutationNotifier
+	clock         func() time.Time
+}
+
+// SetGraphNotifier attaches an optional write-through L1 Cognitive Graph notifier.
+func (s *Service) SetGraphNotifier(n memory.GraphMutationNotifier) {
+	s.graphNotifier = n
 }
 
 // NewService constructs a FeedbackService with its required transactional and security ports.
@@ -161,11 +167,13 @@ func (s *Service) RecordFeedback(ctx context.Context, auth identity.AuthContext,
 	}
 
 	var result *FeedbackResult
+	var updatedMem *memory.Memory
+	var replacementView *capture.MemoryView
 	var denied bool
 	var deniedReason string
 	var deniedScope string
 	err := s.uow.ExecTx(ctx, func(reg memory.RepositoryRegistry) error {
-		res, txErr := s.ExecuteFeedbackTx(ctx, reg, auth, cmd)
+		res, upMem, repView, txErr := s.executeFeedbackTxDetailed(ctx, reg, auth, cmd)
 		if txErr != nil {
 			if errors.Is(txErr, ErrNotFound) || errors.Is(txErr, ErrForbidden) {
 				denied = true
@@ -174,6 +182,8 @@ func (s *Service) RecordFeedback(ctx context.Context, auth identity.AuthContext,
 			return txErr
 		}
 		result = res
+		updatedMem = upMem
+		replacementView = repView
 		return nil
 	})
 	if denied {
@@ -183,6 +193,38 @@ func (s *Service) RecordFeedback(ctx context.Context, auth identity.AuthContext,
 	}
 	if err != nil {
 		return nil, err
+	}
+	if result != nil && !result.Accepted && s.graphNotifier != nil {
+		if updatedMem != nil {
+			s.graphNotifier.ApplyMemoryUpsert(*updatedMem)
+		}
+		if result.Quarantined {
+			var projectID *uuid.UUID
+			var validUntil *time.Time
+			if updatedMem != nil {
+				projectID = updatedMem.ProjectID
+				validUntil = updatedMem.Clocks.ValidUntil
+			}
+			s.graphNotifier.ApplyMemoryStatusChange(auth.TenantID, projectID, result.MemoryID, memory.StatusConflicted, validUntil)
+		}
+		if replacementView != nil {
+			s.graphNotifier.ApplyMemoryStatusChange(auth.TenantID, replacementView.ProjectID, result.MemoryID, memory.StatusSuperseded, &replacementView.CreatedAt)
+			s.graphNotifier.ApplyMemoryUpsert(capture.MemoryFromView(replacementView))
+			s.graphNotifier.ApplyRelationsAdded([]memory.MemoryRelation{{
+				ID:           uuid.New(),
+				TenantID:     replacementView.TenantID,
+				ProjectID:    replacementView.ProjectID,
+				FromMemoryID: replacementView.ID,
+				ToMemoryID:   result.MemoryID,
+				RelationType: memory.RelationSupersedes,
+				Weight:       1.0,
+				SourceID:     &replacementView.PrimarySourceID,
+				ValidFrom:    replacementView.ValidFrom,
+				IsActive:     true,
+				Notes:        "corrected_by_user",
+				CreatedAt:    replacementView.CreatedAt,
+			}})
+		}
 	}
 	return result, nil
 }
@@ -194,16 +236,26 @@ func (s *Service) ExecuteFeedbackTx(
 	auth identity.AuthContext,
 	cmd FeedbackCommand,
 ) (*FeedbackResult, error) {
+	res, _, _, err := s.executeFeedbackTxDetailed(ctx, reg, auth, cmd)
+	return res, err
+}
+
+func (s *Service) executeFeedbackTxDetailed(
+	ctx context.Context,
+	reg memory.RepositoryRegistry,
+	auth identity.AuthContext,
+	cmd FeedbackCommand,
+) (*FeedbackResult, *memory.Memory, *capture.MemoryView, error) {
 	mem, err := reg.Memories().GetMemoryByID(ctx, auth.TenantID, cmd.MemoryID)
 	if err != nil {
 		if errors.Is(err, memory.ErrNotFound) {
-			return nil, ErrNotFound
+			return nil, nil, nil, ErrNotFound
 		}
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	if accessErr := s.authorizeTarget(ctx, auth, mem); accessErr != nil {
-		return nil, accessErr
+		return nil, nil, nil, accessErr
 	}
 
 	return s.executeFeedbackOnLoaded(ctx, reg, auth, mem, cmd)
@@ -224,7 +276,8 @@ func (s *Service) ExecuteOpaqueFeedbackTx(
 		}
 		return nil, err
 	}
-	return s.executeFeedbackOnLoaded(ctx, reg, auth, mem, cmd)
+	res, _, _, err := s.executeFeedbackOnLoaded(ctx, reg, auth, mem, cmd)
+	return res, err
 }
 
 func (s *Service) executeFeedbackOnLoaded(
@@ -233,14 +286,14 @@ func (s *Service) executeFeedbackOnLoaded(
 	auth identity.AuthContext,
 	mem *memory.Memory,
 	cmd FeedbackCommand,
-) (*FeedbackResult, error) {
+) (*FeedbackResult, *memory.Memory, *capture.MemoryView, error) {
 
 	delta, err := memory.ApplyFeedback(mem.AlphaScore, mem.BetaScore, mem.UtilityScore, mem.EpistemicStatus, mem.Status, cmd.Signal)
 	if err != nil {
 		if errors.Is(err, memory.ErrClosedMemoryConflict) {
-			return nil, ErrConflict
+			return nil, nil, nil, ErrConflict
 		}
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	now := s.clock()
@@ -258,7 +311,7 @@ func (s *Service) executeFeedbackOnLoaded(
 		CreatedAt:    now,
 	}
 	if err := reg.Feedback().InsertMemoryFeedback(ctx, fb); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	mem.AlphaScore = delta.NewAlpha
@@ -275,7 +328,7 @@ func (s *Service) executeFeedbackOnLoaded(
 
 	if delta.Quarantined || delta.EpistemicChanged {
 		if err := reg.Memories().CloseMemoryVersionValidity(ctx, mem.ID, mem.Version, now); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		mem.Version++
 		validUntil := mem.Clocks.ValidUntil
@@ -306,24 +359,26 @@ func (s *Service) executeFeedbackOnLoaded(
 			ChangeReason:    changeReason,
 			CreatedAt:       now,
 		}); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	if err := reg.Memories().UpdateMemoryState(ctx, *mem); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	var replacementID *uuid.UUID
+	var replacementView *capture.MemoryView
 	if cmd.Signal == memory.SignalCorrectedByUser && cmd.ReplacementMemory != nil {
 		if s.replacer == nil {
-			return nil, ErrOperational
+			return nil, nil, nil, ErrOperational
 		}
 		repView, repErr := s.replacer.ExecuteSupersedeReplacementTx(ctx, reg, auth, mem, *cmd.ReplacementMemory, "corrected_by_user")
 		if repErr != nil {
-			return nil, repErr
+			return nil, nil, nil, repErr
 		}
 		replacementID = &repView.ID
+		replacementView = repView
 	}
 
 	if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
@@ -340,9 +395,10 @@ func (s *Service) executeFeedbackOnLoaded(
 		Details:       map[string]any{"signal": string(cmd.Signal), "quarantined": delta.Quarantined},
 		CreatedAt:     now,
 	}); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
+	memCopy := *mem
 	return &FeedbackResult{
 		MemoryID:            mem.ID,
 		NewAlpha:            delta.NewAlpha,
@@ -353,7 +409,7 @@ func (s *Service) executeFeedbackOnLoaded(
 		NewStatus:           mem.Status,
 		Quarantined:         delta.Quarantined,
 		ReplacementMemoryID: replacementID,
-	}, nil
+	}, &memCopy, replacementView, nil
 }
 
 func (s *Service) tryOpaqueFeedback(ctx context.Context, auth identity.AuthContext, cmd FeedbackCommand) (*OpaqueReceipt, bool, error) {

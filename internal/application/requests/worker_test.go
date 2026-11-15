@@ -363,6 +363,9 @@ func (r *fullTestReg) InsertMemoryFeedback(_ context.Context, _ memory.MemoryFee
 	return nil
 }
 func (r *fullTestReg) EnqueueMemoryJob(_ context.Context, _ memory.MemoryJob) error { return nil }
+func (r *fullTestReg) InsertMemoryRelation(_ context.Context, _ memory.MemoryRelation) error {
+	return nil
+}
 
 func TestServiceExecutor_AllOpaqueOperations(t *testing.T) {
 	reg := &fullTestReg{
@@ -371,7 +374,8 @@ func TestServiceExecutor_AllOpaqueOperations(t *testing.T) {
 		versions: make(map[uuid.UUID][]memory.MemoryVersion),
 	}
 	capSvc, _ := capture.NewService(reg, reg, nil, nil, nil)
-	exec := &requests.ServiceExecutor{Capture: capSvc}
+	fbSvc, _ := feedback.NewService(reg, reg, nil, nil, capSvc, nil)
+	exec := &requests.ServiceExecutor{Capture: capSvc, Feedback: fbSvc}
 
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -550,5 +554,95 @@ func TestWorker_NewWorkerValidationAndErrorClassification(t *testing.T) {
 				t.Fatalf("expected permanent %s, got %+v", tc.code, fq.failures)
 			}
 		})
+	}
+}
+
+func TestServiceExecutor_OpaqueCaptureRelationsWriteOnlyActor(t *testing.T) {
+	reg := &fullTestReg{
+		fakeReg:  &fakeReg{q: newFakeQueue()},
+		memories: make(map[uuid.UUID]memory.Memory),
+		versions: make(map[uuid.UUID][]memory.MemoryVersion),
+	}
+	capSvc, _ := capture.NewService(reg, reg, nil, nil, nil)
+	fbSvc, _ := feedback.NewService(reg, reg, nil, nil, capSvc, nil)
+	exec := &requests.ServiceExecutor{Capture: capSvc, Feedback: fbSvc}
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	auth := identity.AuthContext{
+		TenantID: tenantID, PrincipalID: uuid.New(), PrincipalType: identity.PrincipalAgent,
+		AllowedProjects: []uuid.UUID{projectID}, AllowedScopes: []identity.ScopeType{identity.ScopeTaskShared},
+	}
+
+	targetSameTask := uuid.New()
+	reg.memories[targetSameTask] = memory.Memory{
+		ID: targetSameTask, TenantID: tenantID, ProjectID: &projectID, TaskID: "t-1",
+		ScopeType: identity.ScopeTaskShared, Status: memory.StatusActive,
+	}
+	targetOtherTask := uuid.New()
+	reg.memories[targetOtherTask] = memory.Memory{
+		ID: targetOtherTask, TenantID: tenantID, ProjectID: &projectID, TaskID: "t-other",
+		ScopeType: identity.ScopeTaskShared, Status: memory.StatusActive,
+	}
+
+	// Same-task relation succeeds for write-only opaque actor.
+	okPayload, _ := json.Marshal(map[string]any{
+		"capture": capture.CaptureCommand{
+			ProjectID: &projectID, TaskID: "t-1", Type: memory.TypeSemantic,
+			ScopeType: identity.ScopeTaskShared, Summary: "linked", Content: "body",
+			EpistemicStatus: memory.EpistemicObserved, Importance: 0.7,
+			SourceType: provenance.SourceAgentExecution, ExternalSourceID: "ext-rel-1",
+			Relations: []memory.ExplicitRelationInput{{ToMemoryID: targetSameTask, RelationType: memory.RelationDependsOn}},
+		},
+	})
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpCapture, nil, okPayload); err != nil {
+		t.Fatalf("expected same-task opaque relation capture to succeed, got %v", err)
+	}
+
+	// Cross-task relation fails with opaque ErrNotFound.
+	badPayload, _ := json.Marshal(map[string]any{
+		"capture": capture.CaptureCommand{
+			ProjectID: &projectID, TaskID: "t-1", Type: memory.TypeSemantic,
+			ScopeType: identity.ScopeTaskShared, Summary: "cross", Content: "body",
+			EpistemicStatus: memory.EpistemicObserved, Importance: 0.7,
+			SourceType: provenance.SourceAgentExecution, ExternalSourceID: "ext-rel-2",
+			Relations: []memory.ExplicitRelationInput{{ToMemoryID: targetOtherTask, RelationType: memory.RelationDependsOn}},
+		},
+	})
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpCapture, nil, badPayload); !errors.Is(err, capture.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for cross-task opaque relation, got %v", err)
+	}
+
+	// Unknown operation returns validation error.
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOperation("invalid_op"), nil, okPayload); err == nil {
+		t.Fatal("expected error for unknown opaque operation")
+	}
+
+	// Nil Capture/Feedback dependencies fail cleanly.
+	emptyExec := &requests.ServiceExecutor{}
+	if _, err := emptyExec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpCapture, nil, okPayload); err == nil {
+		t.Fatal("expected error when Capture is nil")
+	}
+	if _, err := emptyExec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpFeedback, nil, okPayload); err == nil {
+		t.Fatal("expected error when Feedback is nil")
+	}
+
+	// Malformed JSON and forbidden epistemic/feedback signals in ExecuteOpaqueOperationTx.
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpCapture, nil, []byte("{bad")); !errors.Is(err, capture.ErrValidation) {
+		t.Fatalf("expected ErrValidation for malformed capture JSON, got %v", err)
+	}
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpFeedback, nil, []byte("{bad")); !errors.Is(err, feedback.ErrValidation) {
+		t.Fatalf("expected ErrValidation for malformed feedback JSON, got %v", err)
+	}
+	badEpistemic, _ := json.Marshal(map[string]any{
+		"capture": capture.CaptureCommand{
+			ProjectID: &projectID, TaskID: "t-1", Type: memory.TypeSemantic,
+			ScopeType: identity.ScopeTaskShared, Summary: "verified", Content: "body",
+			EpistemicStatus: memory.EpistemicVerified, Importance: 0.7,
+			SourceType: provenance.SourceAgentExecution, ExternalSourceID: "ext-rel-3",
+		},
+	})
+	if _, err := exec.ExecuteOpaqueOperationTx(context.Background(), reg, auth, requests.OpaqueOpCapture, nil, badEpistemic); !errors.Is(err, capture.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for agent assigning verified epistemic, got %v", err)
 	}
 }
