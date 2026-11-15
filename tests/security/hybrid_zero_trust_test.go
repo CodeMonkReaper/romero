@@ -196,10 +196,21 @@ func TestHybridZeroTrustGraphAndSubgraphIsolation(t *testing.T) {
 		t.Fatalf("task-permission revoke failed: %v\n%s", err, out)
 	}
 
-	revResp, revBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+	// Explicit task_id after revocation must return 403 Forbidden.
+	revForbResp, _ := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
 		"query":       "beta-revoked",
 		"project_ids": []string{tA.Project1ID.String()},
 		"task_id":     "task-rev",
+		"limit":       10,
+	})
+	if revForbResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for revoked task_id search, got %d", revForbResp.StatusCode)
+	}
+
+	// Unscoped project search after revocation returns 200 OK without leaking mTaskID.
+	revResp, revBody := env.DoJSON(t, http.MethodPost, "/api/v1/memories/search", tA.Agent1Key, map[string]any{
+		"query":       "beta-revoked",
+		"project_ids": []string{tA.Project1ID.String()},
 		"limit":       10,
 	})
 	if revResp.StatusCode != http.StatusOK {
