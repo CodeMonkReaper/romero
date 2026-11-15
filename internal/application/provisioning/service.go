@@ -422,10 +422,16 @@ func (s *Service) validateBootstrapSpec(spec BootstrapSpec) error {
 	if spec.ExpiresAt != nil && !spec.ExpiresAt.After(s.nowFn()) {
 		return fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
 	}
+	seenTasks := make(map[string]struct{}, len(spec.InitialTaskGrants))
 	for _, g := range spec.InitialTaskGrants {
-		if strings.TrimSpace(g.TaskID) == "" {
+		taskID := strings.TrimSpace(g.TaskID)
+		if taskID == "" {
 			return fmt.Errorf("%w: bootstrap task grant requires task_id", ErrInvalidInput)
 		}
+		if _, dup := seenTasks[taskID]; dup {
+			return fmt.Errorf("%w: duplicate task_id %q in initial task grants", ErrInvalidInput, taskID)
+		}
+		seenTasks[taskID] = struct{}{}
 	}
 	return nil
 }
@@ -469,7 +475,7 @@ func canAdministerTaskPermissions(actor identity.AuthContext, targetTenantID, ta
 
 func (s *Service) recordDeniedTaskAdmin(ctx context.Context, actor identity.AuthContext, cmd ManageTaskPermissionCommand, taskID, op string) error {
 	if s.audit == nil {
-		return nil
+		return fmt.Errorf("%w: audit logger is nil", ErrAuditUnavailable)
 	}
 	var tidPtr, pidPtr *uuid.UUID
 	if actor.TenantID != uuid.Nil {

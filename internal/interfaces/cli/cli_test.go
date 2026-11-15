@@ -9,13 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/romero-project/romero/internal/application/provisioning"
 	"github.com/romero-project/romero/internal/domain/identity"
-	"github.com/romero-project/romero/internal/infrastructure/persistence/postgres"
 	"github.com/romero-project/romero/internal/interfaces/cli"
 )
 
@@ -161,6 +159,22 @@ func TestMigrateCommandResolvesDSNFromConfigAndFlags(t *testing.T) {
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected error when no DSN configured")
 	}
+
+	// Explicit --dsn flag overrides ROMERO_DSN environment variable.
+	t.Setenv("ROMERO_DSN", "postgres://env-user:pw@env-host:5432/envdb")
+	mig.dsns = nil
+	mig.directions = nil
+	out.Reset()
+	cmd = cli.NewRootCmd(testDeps(&fakeService{}, &fakeAuth{}, mig))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"migrate", "--dsn", "postgres://flag-user:pw@flag-host:5432/flagdb", "--direction", "status"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("migrate --dsn precedence Execute: %v", err)
+	}
+	if len(mig.dsns) != 1 || mig.dsns[0] != "postgres://flag-user:pw@flag-host:5432/flagdb" || mig.directions[0] != "status" {
+		t.Fatalf("expected --dsn precedence and status direction, got dsns=%v dirs=%v", mig.dsns, mig.directions)
+	}
 }
 
 func TestBootstrapAndPrincipalCreateCommands(t *testing.T) {
@@ -218,7 +232,17 @@ func TestBootstrapAndPrincipalCreateCommands(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("bootstrap Execute: %v", err)
 	}
-	if len(svc.bootstrapCalls) != 1 || !svc.bootstrapCalls[0].IsAdmin || len(svc.bootstrapCalls[0].InitialTaskGrants) != 1 {
+	if len(svc.bootstrapCalls) != 1 ||
+		svc.bootstrapCalls[0].TenantSlug != "acme" ||
+		svc.bootstrapCalls[0].ProjectSlug != "core" ||
+		svc.bootstrapCalls[0].AgentExternalKey != "orch" ||
+		svc.bootstrapCalls[0].PrincipalName != "root" ||
+		svc.bootstrapCalls[0].PrincipalType != identity.PrincipalOrchestrator ||
+		!svc.bootstrapCalls[0].IsAdmin ||
+		len(svc.bootstrapCalls[0].InitialTaskGrants) != 1 ||
+		svc.bootstrapCalls[0].InitialTaskGrants[0].TaskID != "task-1" ||
+		!svc.bootstrapCalls[0].InitialTaskGrants[0].CanRead ||
+		!svc.bootstrapCalls[0].InitialTaskGrants[0].CanWrite {
 		t.Fatalf("unexpected bootstrap call: %+v", svc.bootstrapCalls)
 	}
 	if !strings.Contains(out.String(), "rmr_orchestrator_12345678_") {
@@ -260,7 +284,14 @@ func TestBootstrapAndPrincipalCreateCommands(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("principal create Execute: %v", err)
 	}
-	if len(svc.createCalls) != 1 || svc.createCalls[0].ExpiresAt == nil {
+	if len(svc.createCalls) != 1 ||
+		svc.createCalls[0].TenantID != tid ||
+		svc.createCalls[0].AgentID == nil || *svc.createCalls[0].AgentID != aid ||
+		svc.createCalls[0].PrincipalType != identity.PrincipalAgent ||
+		svc.createCalls[0].Name != "worker-1" ||
+		len(svc.createCalls[0].AllowedProjects) != 1 || svc.createCalls[0].AllowedProjects[0] != pid ||
+		len(svc.createCalls[0].AllowedScopes) != 2 ||
+		svc.createCalls[0].ExpiresAt == nil {
 		t.Fatalf("unexpected createCalls: %+v", svc.createCalls)
 	}
 	if !strings.Contains(out.String(), svc.createKey) {
@@ -308,7 +339,14 @@ func TestTaskPermissionGrantAndRevokeCommands(t *testing.T) {
 	if !strings.Contains(out.String(), `"status": "granted"`) {
 		t.Fatalf("expected status=granted in output, got %q", out.String())
 	}
-	if len(svc.taskCalls) != 1 || !svc.taskCalls[0].cmd.CanRead || !svc.taskCalls[0].cmd.CanWrite {
+	if len(svc.taskCalls) != 1 ||
+		svc.taskCalls[0].actor.PrincipalID != actorID ||
+		svc.taskCalls[0].cmd.TenantID != tid ||
+		svc.taskCalls[0].cmd.ProjectID != pid ||
+		svc.taskCalls[0].cmd.TaskID != "task-99" ||
+		svc.taskCalls[0].cmd.PrincipalID != targetPrinc ||
+		!svc.taskCalls[0].cmd.CanRead ||
+		!svc.taskCalls[0].cmd.CanWrite {
 		t.Fatalf("unexpected grant call: %+v", svc.taskCalls)
 	}
 
@@ -373,7 +411,43 @@ func TestTaskPermissionGrantAndRevokeCommands(t *testing.T) {
 		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 
-	// Grant without --read or --write, and invalid UUIDs on principal create / task-permission fail cleanly.
+	// Authentication failure propagates cleanly before reaching service.
+	auth.failErr = provisioning.ErrUnauthenticated
+	cmd = cli.NewRootCmd(testDeps(svc, auth, &fakeMigrator{}))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{
+		"task-permission", "grant",
+		"--dsn", "postgres://u:p@localhost:5432/db",
+		"--api-key", apiKey,
+		"--tenant-id", tid.String(),
+		"--project-id", pid.String(),
+		"--task-id", "task-99",
+		"--principal-id", targetPrinc.String(),
+		"--read",
+	})
+	if err := cmd.Execute(); !errors.Is(err, provisioning.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated, got %v", err)
+	}
+	auth.failErr = nil
+
+	// Unconfigured Dependencies{} fails closed without panicking.
+	for _, args := range [][]string{
+		{"migrate", "--dsn", "postgres://u:p@localhost:5432/db"},
+		{"bootstrap", "--dsn", "postgres://u:p@localhost:5432/db", "--tenant-slug", "a", "--tenant-name", "A", "--project-slug", "p", "--project-name", "P", "--principal-name", "u"},
+		{"principal", "create", "--dsn", "postgres://u:p@localhost:5432/db", "--tenant-id", tid.String(), "--type", "user", "--name", "u"},
+		{"task-permission", "grant", "--dsn", "postgres://u:p@localhost:5432/db", "--api-key", apiKey, "--tenant-id", tid.String(), "--project-id", pid.String(), "--task-id", "t", "--principal-id", targetPrinc.String(), "--read"},
+	} {
+		c := cli.NewRootCmd(cli.Dependencies{})
+		c.SetOut(&out)
+		c.SetErr(&errBuf)
+		c.SetArgs(args)
+		if err := c.Execute(); err == nil {
+			t.Fatalf("expected unconfigured dependency error for %v", args)
+		}
+	}
+
+	// Grant without --read or --write, negative expires-in, and invalid UUIDs fail cleanly.
 	invalidCmds := [][]string{
 		{"task-permission", "grant", "--api-key", apiKey, "--tenant-id", tid.String(), "--project-id", pid.String(), "--task-id", "t", "--principal-id", targetPrinc.String()},
 		{"task-permission", "grant", "--api-key", apiKey, "--tenant-id", "bad", "--project-id", pid.String(), "--task-id", "t", "--principal-id", targetPrinc.String(), "--read"},
@@ -383,7 +457,9 @@ func TestTaskPermissionGrantAndRevokeCommands(t *testing.T) {
 		{"principal", "create", "--tenant-id", tid.String(), "--agent-id", "bad", "--type", "agent", "--name", "n"},
 		{"principal", "create", "--tenant-id", tid.String(), "--type", "user", "--name", "n", "--projects", "bad"},
 		{"principal", "create", "--tenant-id", tid.String(), "--type", "user", "--name", "n", "--scopes", "bad"},
+		{"principal", "create", "--tenant-id", tid.String(), "--type", "user", "--name", "n", "--expires-in", "-1h"},
 		{"bootstrap", "--tenant-slug", "s", "--tenant-name", "n", "--project-slug", "p", "--project-name", "pn", "--principal-name", "u", "--scopes", "bad"},
+		{"bootstrap", "--tenant-slug", "s", "--tenant-name", "n", "--project-slug", "p", "--project-name", "pn", "--principal-name", "u", "--expires-in", "-1h"},
 	}
 	for i, args := range invalidCmds {
 		c := cli.NewRootCmd(testDeps(svc, auth, &fakeMigrator{}))
@@ -393,41 +469,5 @@ func TestTaskPermissionGrantAndRevokeCommands(t *testing.T) {
 		if err := c.Execute(); err == nil {
 			t.Fatalf("invalidCmds[%d] (%v) expected error", i, args)
 		}
-	}
-}
-
-func TestPostgresAdapterMappings(t *testing.T) {
-	now := time.Now().UTC()
-	tid := uuid.New()
-	pid := uuid.New()
-	aid := uuid.New()
-	prID := uuid.New()
-
-	pgTenant := postgres.TenantRecord{ID: tid, Slug: "s", Name: "n", IsActive: true}
-	if got := cli.MapTenant(pgTenant); got.ID != tid || got.Slug != "s" || !got.IsActive {
-		t.Fatalf("MapTenant mismatch: %+v", got)
-	}
-	pgProj := postgres.ProjectRecord{ID: pid, TenantID: tid, Slug: "p", Name: "P", IsActive: true}
-	if got := cli.MapProject(pgProj); got.ID != pid || got.TenantID != tid {
-		t.Fatalf("MapProject mismatch: %+v", got)
-	}
-	pgAg := postgres.AgentRecord{ID: aid, TenantID: tid, ExternalKey: "k", Name: "A", RoleType: "r", IsActive: true}
-	if got := cli.MapAgent(pgAg); got.ID != aid || got.ExternalKey != "k" {
-		t.Fatalf("MapAgent mismatch: %+v", got)
-	}
-	pgCand := postgres.PrincipalAuthCandidate{
-		Principal: postgres.PrincipalRecord{
-			ID: prID, TenantID: tid, AgentID: &aid, PrincipalType: identity.PrincipalAgent,
-			Name: "p", APIKeyPrefix: "rmr_agent_1234567890", AllowedProjects: []uuid.UUID{pid},
-			AllowedScopes: []identity.ScopeType{identity.ScopeAgentPrivate}, IsActive: true,
-			ExpiresAt: &now, CreatedAt: now, IsAdmin: false,
-		},
-		APIKeySHA256: "abc",
-		TenantActive: true,
-		AgentActive:  true,
-	}
-	gotCands := cli.MapAuthCandidates([]postgres.PrincipalAuthCandidate{pgCand})
-	if len(gotCands) != 1 || gotCands[0].Principal.ID != prID || !gotCands[0].TenantActive || !gotCands[0].AgentActive {
-		t.Fatalf("MapAuthCandidates mismatch: %+v", gotCands)
 	}
 }

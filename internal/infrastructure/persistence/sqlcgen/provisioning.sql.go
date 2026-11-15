@@ -518,7 +518,7 @@ SELECT
     p.created_at,
     p.is_admin,
     t.is_active AS tenant_active,
-    (p.agent_id IS NULL OR COALESCE(a.is_active, FALSE))::boolean AS agent_active
+    ((p.principal_type <> 'agent' AND p.agent_id IS NULL) OR (p.agent_id IS NOT NULL AND COALESCE(a.is_active, FALSE)))::boolean AS agent_active
 FROM principals p
 JOIN tenants t
   ON t.id = p.tenant_id

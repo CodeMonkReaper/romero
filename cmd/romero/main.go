@@ -13,7 +13,7 @@ func main() {
 }
 
 func run(args []string, out, errOut io.Writer) int {
-	cmd := cli.NewRootCmd(cli.DefaultDependencies())
+	cmd := cli.NewRootCmd(defaultDependencies())
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
 	cmd.SetArgs(args)

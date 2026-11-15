@@ -1,10 +1,8 @@
-package cli
+package main
 
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -56,7 +54,10 @@ func (s *stubPGBackend) GetProjectByID(_ context.Context, tid, id uuid.UUID) (*p
 }
 
 func (s *stubPGBackend) CountTenantProjects(_ context.Context, _ uuid.UUID, ids []uuid.UUID) (int64, error) {
-	return int64(len(ids)), s.err
+	if s.err != nil {
+		return 0, s.err
+	}
+	return int64(len(ids)), nil
 }
 
 func (s *stubPGBackend) CreateAgent(_ context.Context, a postgres.CreateAgentParams) (postgres.AgentRecord, error) {
@@ -110,7 +111,11 @@ func TestPGProvisioningAdapterRoundtripAndErrors(t *testing.T) {
 	tid, pid, aid, prid := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	now := time.Now().UTC()
 
-	okAdapter := NewPostgresAdapter(&stubPGBackend{})
+	if defs := defaultDependencies(); defs.Migrator == nil || defs.OpenProvisioner == nil {
+		t.Fatal("expected defaultDependencies to populate Migrator and OpenProvisioner")
+	}
+
+	okAdapter := newPostgresAdapter(&stubPGBackend{})
 	if err := okAdapter.ExecTx(ctx, func(repo provisioning.Repository, _ memory.AuditLogger) error {
 		tRec, err := repo.CreateTenant(ctx, provisioning.CreateTenantParams{ID: tid, Slug: "s", Name: "n", IsActive: true})
 		if err != nil || tRec.ID != tid {
@@ -158,7 +163,10 @@ func TestPGProvisioningAdapterRoundtripAndErrors(t *testing.T) {
 		t.Fatalf("okAdapter.ExecTx: %v", err)
 	}
 
-	failAdapter := NewPostgresAdapter(&stubPGBackend{err: errors.New("boom")})
+	failAdapter := newPostgresAdapter(&stubPGBackend{err: errors.New("boom")})
+	if err := failAdapter.ExecTx(ctx, func(provisioning.Repository, memory.AuditLogger) error { return nil }); err == nil {
+		t.Fatal("expected error from ExecTx")
+	}
 	if _, err := failAdapter.CreateTenant(ctx, provisioning.CreateTenantParams{}); err == nil {
 		t.Fatal("expected error from CreateTenant")
 	}
@@ -170,6 +178,9 @@ func TestPGProvisioningAdapterRoundtripAndErrors(t *testing.T) {
 	}
 	if _, err := failAdapter.GetProjectByID(ctx, tid, pid); err == nil {
 		t.Fatal("expected error from GetProjectByID")
+	}
+	if _, err := failAdapter.CountTenantProjects(ctx, tid, []uuid.UUID{pid}); err == nil {
+		t.Fatal("expected error from CountTenantProjects")
 	}
 	if _, err := failAdapter.CreateAgent(ctx, provisioning.CreateAgentParams{}); err == nil {
 		t.Fatal("expected error from CreateAgent")
@@ -186,37 +197,62 @@ func TestPGProvisioningAdapterRoundtripAndErrors(t *testing.T) {
 	if _, err := failAdapter.LookupPrincipalsByPrefix(ctx, "x"); err == nil {
 		t.Fatal("expected error from LookupPrincipalsByPrefix")
 	}
+	if err := failAdapter.UpsertTaskPermission(ctx, provisioning.TaskPermissionGrant{}); err == nil {
+		t.Fatal("expected error from UpsertTaskPermission")
+	}
+
+	dupAdapter := newPostgresAdapter(&stubPGBackend{err: postgres.ErrAlreadyExists})
+	if _, err := dupAdapter.CreateTenant(ctx, provisioning.CreateTenantParams{}); !errors.Is(err, provisioning.ErrAlreadyExists) {
+		t.Fatalf("expected ErrAlreadyExists mapping, got %v", err)
+	}
+	if _, err := dupAdapter.CreatePrincipal(ctx, provisioning.CreatePrincipalParams{}); !errors.Is(err, provisioning.ErrAlreadyExists) {
+		t.Fatalf("expected ErrAlreadyExists mapping for CreatePrincipal, got %v", err)
+	}
+	if err := dupAdapter.ExecTx(ctx, func(provisioning.Repository, memory.AuditLogger) error { return nil }); !errors.Is(err, provisioning.ErrAlreadyExists) {
+		t.Fatalf("expected ErrAlreadyExists mapping for ExecTx, got %v", err)
+	}
+
+	invAdapter := newPostgresAdapter(&stubPGBackend{err: postgres.ErrInvalidInput})
+	if _, err := invAdapter.CreateProject(ctx, provisioning.CreateProjectParams{}); !errors.Is(err, provisioning.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput mapping, got %v", err)
+	}
+	if err := invAdapter.UpsertTaskPermission(ctx, provisioning.TaskPermissionGrant{}); !errors.Is(err, provisioning.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput mapping for UpsertTaskPermission, got %v", err)
+	}
 }
 
-func TestConfigAndParserEdgeCases(t *testing.T) {
-	t.Setenv("ROMERO_DSN", "postgres://env/db")
-	if got, err := resolveDSN("", ""); err != nil || got != "postgres://env/db" {
-		t.Fatalf("resolveDSN env: got=%q err=%v", got, err)
-	}
-	t.Setenv("ROMERO_DSN", "")
+func TestPostgresAdapterMappings(t *testing.T) {
+	now := time.Now().UTC()
+	tid := uuid.New()
+	pid := uuid.New()
+	aid := uuid.New()
+	prID := uuid.New()
 
-	dir := t.TempDir()
-	emptyTOML := filepath.Join(dir, "empty.toml")
-	_ = os.WriteFile(emptyTOML, []byte("[database]\ndsn = \"\"\n"), 0o600)
-	if _, err := resolveDSN("", emptyTOML); err == nil {
-		t.Fatal("expected error for empty [database].dsn")
+	pgTenant := postgres.TenantRecord{ID: tid, Slug: "s", Name: "n", IsActive: true}
+	if got := mapTenant(pgTenant); got.ID != tid || got.Slug != "s" || !got.IsActive {
+		t.Fatalf("mapTenant mismatch: %+v", got)
 	}
-	badTOML := filepath.Join(dir, "bad.toml")
-	_ = os.WriteFile(badTOML, []byte("not = [valid"), 0o600)
-	if _, err := resolveDSN("", badTOML); err == nil {
-		t.Fatal("expected error for malformed toml")
+	pgProj := postgres.ProjectRecord{ID: pid, TenantID: tid, Slug: "p", Name: "P", IsActive: true}
+	if got := mapProject(pgProj); got.ID != pid || got.TenantID != tid {
+		t.Fatalf("mapProject mismatch: %+v", got)
 	}
-
-	if _, err := parseScopes([]string{"unknown_scope"}); err == nil {
-		t.Fatal("expected parseScopes error")
+	pgAg := postgres.AgentRecord{ID: aid, TenantID: tid, ExternalKey: "k", Name: "A", RoleType: "r", IsActive: true}
+	if got := mapAgent(pgAg); got.ID != aid || got.ExternalKey != "k" {
+		t.Fatalf("mapAgent mismatch: %+v", got)
 	}
-	if _, err := parseUUIDList([]string{"not-a-uuid"}); err == nil {
-		t.Fatal("expected parseUUIDList error")
+	pgCand := postgres.PrincipalAuthCandidate{
+		Principal: postgres.PrincipalRecord{
+			ID: prID, TenantID: tid, AgentID: &aid, PrincipalType: identity.PrincipalAgent,
+			Name: "p", APIKeyPrefix: "rmr_agent_1234567890", AllowedProjects: []uuid.UUID{pid},
+			AllowedScopes: []identity.ScopeType{identity.ScopeAgentPrivate}, IsActive: true,
+			ExpiresAt: &now, CreatedAt: now, IsAdmin: false,
+		},
+		APIKeySHA256: "abc",
+		TenantActive: true,
+		AgentActive:  true,
 	}
-	if _, err := parseTaskGrants([]string{"t1:bogus"}); err == nil {
-		t.Fatal("expected parseTaskGrants error")
-	}
-	if defs := DefaultDependencies(); defs.Migrator == nil || defs.OpenProvisioner == nil {
-		t.Fatal("expected DefaultDependencies to populate Migrator and OpenProvisioner")
+	gotCands := mapAuthCandidates([]postgres.PrincipalAuthCandidate{pgCand})
+	if len(gotCands) != 1 || gotCands[0].Principal.ID != prID || !gotCands[0].TenantActive || !gotCands[0].AgentActive {
+		t.Fatalf("mapAuthCandidates mismatch: %+v", gotCands)
 	}
 }

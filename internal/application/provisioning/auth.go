@@ -85,16 +85,20 @@ func (a *Authenticator) Authenticate(ctx context.Context, rawAPIKey string) (ide
 
 	now := a.nowFn()
 	pr := matched.Principal
+	if !validPrincipalType(pr.PrincipalType) || (pr.PrincipalType == identity.PrincipalAgent && (pr.AgentID == nil || *pr.AgentID == uuid.Nil)) {
+		tid := pr.TenantID
+		pid := pr.ID
+		if err := a.recordDenied(ctx, &tid, &pid, pr.AgentID, "invalid_principal_state"); err != nil {
+			return identity.AuthContext{}, err
+		}
+		return identity.AuthContext{}, ErrUnauthenticated
+	}
 	if !matched.TenantActive || !pr.IsActive || !matched.AgentActive || (pr.ExpiresAt != nil && !pr.ExpiresAt.After(now)) {
 		tid := pr.TenantID
 		pid := pr.ID
 		if err := a.recordDenied(ctx, &tid, &pid, pr.AgentID, "principal_inactive_or_expired"); err != nil {
 			return identity.AuthContext{}, err
 		}
-		return identity.AuthContext{}, ErrUnauthenticated
-	}
-
-	if !validPrincipalType(pr.PrincipalType) {
 		return identity.AuthContext{}, ErrUnauthenticated
 	}
 
@@ -111,7 +115,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, rawAPIKey string) (ide
 
 func (a *Authenticator) recordDenied(ctx context.Context, tenantID, principalID, agentID *uuid.UUID, reason string) error {
 	if a.audit == nil {
-		return nil
+		return fmt.Errorf("%w: audit logger is nil", ErrAuditUnavailable)
 	}
 	ev := memory.AuditEvent{
 		ID:           uuid.New(),

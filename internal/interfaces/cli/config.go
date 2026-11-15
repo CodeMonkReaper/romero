@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pelletier/go-toml/v2"
@@ -54,14 +55,6 @@ type Migrator interface {
 type Dependencies struct {
 	Migrator        Migrator
 	OpenProvisioner func(ctx context.Context, dsn string) (ProvisioningClient, func(), error)
-}
-
-// DefaultDependencies returns production PostgreSQL and Goose dependencies.
-func DefaultDependencies() Dependencies {
-	return Dependencies{
-		Migrator:        gooseMigrator{},
-		OpenProvisioner: openPostgresProvisioner,
-	}
 }
 
 func resolveDSN(flagDSN, configPath string) (string, error) {
@@ -174,4 +167,15 @@ func parseTaskGrants(raw []string) ([]provisioning.BootstrapTaskGrant, error) {
 		out = append(out, grant)
 	}
 	return out, nil
+}
+
+func parseExpiresAt(expiresIn time.Duration) (*time.Time, error) {
+	if expiresIn < 0 {
+		return nil, fmt.Errorf("%w: --expires-in must be positive", provisioning.ErrInvalidInput)
+	}
+	if expiresIn == 0 {
+		return nil, nil
+	}
+	t := time.Now().UTC().Add(expiresIn)
+	return &t, nil
 }

@@ -21,13 +21,6 @@ type globalFlags struct {
 
 // NewRootCmd constructs the root `romero` Cobra command tree using deps.
 func NewRootCmd(deps Dependencies) *cobra.Command {
-	if deps.Migrator == nil {
-		deps.Migrator = gooseMigrator{}
-	}
-	if deps.OpenProvisioner == nil {
-		deps.OpenProvisioner = openPostgresProvisioner
-	}
-
 	var gf globalFlags
 	root := &cobra.Command{
 		Use:           "romero",
@@ -67,6 +60,9 @@ func newMigrateCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 		Short: "Apply embedded Goose SQL migrations to PostgreSQL",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if deps.Migrator == nil {
+				return errors.New("migrator dependency is not configured")
+			}
 			dsn, err := resolveDSN(gf.dsn, gf.configPath)
 			if err != nil {
 				return err
@@ -120,10 +116,12 @@ func newBootstrapCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var expiresAt *time.Time
-			if expiresIn > 0 {
-				t := time.Now().UTC().Add(expiresIn)
-				expiresAt = &t
+			expiresAt, err := parseExpiresAt(expiresIn)
+			if err != nil {
+				return err
+			}
+			if deps.OpenProvisioner == nil {
+				return errors.New("provisioner dependency is not configured")
 			}
 
 			dsn, err := resolveDSN(gf.dsn, gf.configPath)
@@ -237,10 +235,12 @@ func newPrincipalCreateCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var expiresAt *time.Time
-			if expiresIn > 0 {
-				t := time.Now().UTC().Add(expiresIn)
-				expiresAt = &t
+			expiresAt, err := parseExpiresAt(expiresIn)
+			if err != nil {
+				return err
+			}
+			if deps.OpenProvisioner == nil {
+				return errors.New("provisioner dependency is not configured")
 			}
 
 			dsn, err := resolveDSN(gf.dsn, gf.configPath)
@@ -342,6 +342,9 @@ func newTaskPermissionMutateCmd(gf *globalFlags, deps Dependencies, isGrant bool
 			}
 			if isGrant && !canRead && !canWrite {
 				return errors.New("grant requires at least --read or --write")
+			}
+			if deps.OpenProvisioner == nil {
+				return errors.New("provisioner dependency is not configured")
 			}
 
 			dsn, err := resolveDSN(gf.dsn, gf.configPath)

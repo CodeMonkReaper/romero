@@ -449,7 +449,92 @@ func TestAuthenticatorRejectionsAndFailures(t *testing.T) {
 	}
 	store.failDeniedAud = nil
 
-	// 5. Prefix lookup failure surfaces error cleanly.
+	// 5. Inactive principal (!IsActive), inactive tenant (!TenantActive), orphaned agent, invalid PrincipalType,
+	//    prefix collision across >= 2 candidates, and nil AuditLogger fail-closed checks.
+	revokedKey, revokedPrinc, err := svc.CreatePrincipal(ctx, provisioning.CreatePrincipalInput{
+		TenantID:        out.Tenant.ID,
+		PrincipalType:   identity.PrincipalUser,
+		Name:            "inactive-user",
+		AllowedProjects: []uuid.UUID{out.Project.ID},
+		AllowedScopes:   []identity.ScopeType{identity.ScopeProjectShared},
+	})
+	if err != nil {
+		t.Fatalf("CreatePrincipal revoked user: %v", err)
+	}
+	prRec := store.principals[revokedPrinc.ID]
+	prRec.IsActive = false
+	store.principals[revokedPrinc.ID] = prRec
+	if _, err := auth.Authenticate(ctx, revokedKey); !errors.Is(err, provisioning.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated for inactive principal, got %v", err)
+	}
+
+	// Prefix collision: 2 candidates sharing the same 20-char prefix, second one matches.
+	collID := uuid.New()
+	collKey := out.RawAPIKey[:18] + "aa" + strings.Repeat("b", 30)
+	if collKey == out.RawAPIKey {
+		collKey = out.RawAPIKey[:18] + "cc" + strings.Repeat("d", 30)
+	}
+	collSum := sha256.Sum256([]byte(collKey))
+	decoyID := uuid.New()
+	store.principals[decoyID] = provisioning.Principal{
+		ID: decoyID, TenantID: out.Tenant.ID, PrincipalType: identity.PrincipalUser,
+		Name: "wrong-hash-same-prefix", APIKeyPrefix: collKey[:20], IsActive: true,
+	}
+	store.hashesByID[decoyID] = strings.Repeat("0", 64)
+	store.principals[collID] = provisioning.Principal{
+		ID: collID, TenantID: out.Tenant.ID, PrincipalType: identity.PrincipalUser,
+		Name: "matching-second-candidate", APIKeyPrefix: collKey[:20], IsActive: true,
+	}
+	store.hashesByID[collID] = hex.EncodeToString(collSum[:])
+	collCtx, err := auth.Authenticate(ctx, collKey)
+	if err != nil || collCtx.PrincipalID != collID {
+		t.Fatalf("expected second prefix-collision candidate to authenticate, got ctx=%+v err=%v", collCtx, err)
+	}
+
+	// Orphaned PrincipalAgent (AgentID == nil) -> ErrUnauthenticated + denied audit.
+	orphanID := uuid.New()
+	orphanKey, orphanPrefix, orphanSum, err := provisioning.GenerateAPIKey(identity.PrincipalAgent, orphanID)
+	if err != nil {
+		t.Fatalf("GenerateAPIKey orphan: %v", err)
+	}
+	store.principals[orphanID] = provisioning.Principal{
+		ID: orphanID, TenantID: out.Tenant.ID, AgentID: nil, PrincipalType: identity.PrincipalAgent,
+		Name: "orphan-agent", APIKeyPrefix: orphanPrefix, IsActive: true,
+	}
+	store.hashesByID[orphanID] = orphanSum
+	if _, err := auth.Authenticate(ctx, orphanKey); !errors.Is(err, provisioning.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated for orphaned agent principal, got %v", err)
+	}
+
+	// Invalid PrincipalType stored in DB -> ErrUnauthenticated + denied audit.
+	badTypeID := uuid.New()
+	badTypeKey, badTypePrefix, badTypeSum, err := provisioning.GenerateAPIKey(identity.PrincipalUser, badTypeID)
+	if err != nil {
+		t.Fatalf("GenerateAPIKey bad type: %v", err)
+	}
+	store.principals[badTypeID] = provisioning.Principal{
+		ID: badTypeID, TenantID: out.Tenant.ID, PrincipalType: identity.PrincipalType("rogue"),
+		Name: "bad-type", APIKeyPrefix: badTypePrefix, IsActive: true,
+	}
+	store.hashesByID[badTypeID] = badTypeSum
+	if _, err := auth.Authenticate(ctx, badTypeKey); !errors.Is(err, provisioning.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated for invalid principal type, got %v", err)
+	}
+
+	// Inactive tenant (!TenantActive) -> ErrUnauthenticated + denied audit.
+	store.inactiveTenants[out.Tenant.ID] = true
+	if _, err := auth.Authenticate(ctx, out.RawAPIKey); !errors.Is(err, provisioning.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated for inactive tenant, got %v", err)
+	}
+	store.inactiveTenants[out.Tenant.ID] = false
+
+	// Nil AuditLogger in Authenticator fails closed with ErrAuditUnavailable.
+	nilAuditAuth := provisioning.NewAuthenticator(store, nil, provisioning.WithAuthClock(func() time.Time { return now }))
+	if _, err := nilAuditAuth.Authenticate(ctx, "not-a-valid-key"); !errors.Is(err, provisioning.ErrAuditUnavailable) {
+		t.Fatalf("expected ErrAuditUnavailable when auth has nil AuditLogger, got %v", err)
+	}
+
+	// 6. Prefix lookup failure surfaces error cleanly.
 	store.failLookup = errors.New("db unavailable")
 	if _, err := auth.Authenticate(ctx, out.RawAPIKey); err == nil {
 		t.Fatal("expected lookup error")
@@ -533,6 +618,61 @@ func TestManageTaskPermissionsAuthorityAndAuditAtomicity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("orchestrator grant on own project: %v", err)
 	}
+	grantKey := b1.Tenant.ID.String() + "|" + b1.Project.ID.String() + "|task-42|" + worker.ID.String()
+	persistedGrant, ok := store.taskPerms[grantKey]
+	if !ok || !persistedGrant.CanRead || !persistedGrant.CanWrite {
+		t.Fatalf("expected persisted grant CanRead=true CanWrite=true, got ok=%v grant=%+v", ok, persistedGrant)
+	}
+
+	// Administering a grant for worker must NOT implicitly create a task permission row for the orchestrator (AC-T5).
+	orchImplicitKey := b1.Tenant.ID.String() + "|" + b1.Project.ID.String() + "|task-42|" + orch.ID.String()
+	if _, implicitOrchGrant := store.taskPerms[orchImplicitKey]; implicitOrchGrant {
+		t.Fatalf("expected no implicit task_shared permission created for orchestrator %s", orch.ID)
+	}
+
+	// Admin actor can grant even on a project outside its AllowedProjects.
+	t1AdminActor := identity.AuthContext{
+		TenantID:        b1.Tenant.ID,
+		PrincipalID:     b1.Principal.ID,
+		PrincipalType:   identity.PrincipalUser,
+		AllowedProjects: []uuid.UUID{b1.Project.ID},
+		AllowedScopes:   []identity.ScopeType{identity.ScopeTaskShared},
+		IsAdmin:         true,
+	}
+	if err := svc.ManageTaskPermission(ctx, t1AdminActor, provisioning.ManageTaskPermissionCommand{
+		TenantID:    b1.Tenant.ID,
+		ProjectID:   proj2.ID,
+		TaskID:      "task-admin",
+		PrincipalID: worker.ID,
+		CanRead:     true,
+	}); err != nil {
+		t.Fatalf("admin grant across tenant projects: %v", err)
+	}
+	adminKey := b1.Tenant.ID.String() + "|" + proj2.ID.String() + "|task-admin|" + worker.ID.String()
+	if g, ok := store.taskPerms[adminKey]; !ok || !g.CanRead || g.CanWrite {
+		t.Fatalf("expected admin grant persisted on proj2, got ok=%v g=%+v", ok, g)
+	}
+
+	// Non-admin user and service WITH AllowedProjects containing Project1 are still denied.
+	for _, ptype := range []identity.PrincipalType{identity.PrincipalUser, identity.PrincipalService} {
+		nonAdminActor := identity.AuthContext{
+			TenantID:        b1.Tenant.ID,
+			PrincipalID:     worker.ID,
+			PrincipalType:   ptype,
+			AllowedProjects: []uuid.UUID{b1.Project.ID},
+			AllowedScopes:   []identity.ScopeType{identity.ScopeTaskShared},
+			IsAdmin:         false,
+		}
+		if err := svc.ManageTaskPermission(ctx, nonAdminActor, provisioning.ManageTaskPermissionCommand{
+			TenantID:    b1.Tenant.ID,
+			ProjectID:   b1.Project.ID,
+			TaskID:      "task-42",
+			PrincipalID: orch.ID,
+			CanRead:     true,
+		}); !errors.Is(err, identity.ErrForbidden) {
+			t.Fatalf("expected ErrForbidden for non-admin %s, got %v", ptype, err)
+		}
+	}
 
 	// Orchestrator CANNOT grant on unmanaged Project 2 (AC-T5).
 	if err := svc.ManageTaskPermission(ctx, orchActor, provisioning.ManageTaskPermissionCommand{
@@ -600,6 +740,10 @@ func TestManageTaskPermissionsAuthorityAndAuditAtomicity(t *testing.T) {
 	if got := store.allowedAudits[len(store.allowedAudits)-1]; got.Operation != "task_permission.revoke" {
 		t.Fatalf("expected task_permission.revoke audit operation, got %q", got.Operation)
 	}
+	revokedGrant, ok := store.taskPerms[grantKey]
+	if !ok || revokedGrant.CanRead || revokedGrant.CanWrite {
+		t.Fatalf("expected persisted revoked grant with CanRead=false CanWrite=false, got ok=%v grant=%+v", ok, revokedGrant)
+	}
 
 	// Agent actor (even if IsAdmin were spoofed) is always denied from managing task permissions.
 	agentActor := identity.AuthContext{
@@ -631,6 +775,18 @@ func TestManageTaskPermissionsAuthorityAndAuditAtomicity(t *testing.T) {
 		t.Fatalf("expected ErrAuditUnavailable when denied audit fails, got %v", err)
 	}
 	store.failDeniedAud = nil
+
+	// Nil AuditLogger in Service fails closed with ErrAuditUnavailable on denied task permission check.
+	nilAuditSvc := provisioning.NewService(store, store, nil)
+	if err := nilAuditSvc.ManageTaskPermission(ctx, agentActor, provisioning.ManageTaskPermissionCommand{
+		TenantID:    b1.Tenant.ID,
+		ProjectID:   b1.Project.ID,
+		TaskID:      "task-42",
+		PrincipalID: worker.ID,
+		CanRead:     true,
+	}); !errors.Is(err, provisioning.ErrAuditUnavailable) {
+		t.Fatalf("expected ErrAuditUnavailable when Service has nil AuditLogger, got %v", err)
+	}
 }
 
 func TestProvisioningValidationAndBoundaryTriangulation(t *testing.T) {
@@ -686,6 +842,7 @@ func TestProvisioningValidationAndBoundaryTriangulation(t *testing.T) {
 		{TenantSlug: "t", TenantName: "n", ProjectSlug: "p", ProjectName: "pn", PrincipalName: "u", PrincipalType: identity.PrincipalAgent},
 		{TenantSlug: "t", TenantName: "n", ProjectSlug: "p", ProjectName: "pn", PrincipalName: "u", PrincipalType: identity.PrincipalUser, ExpiresAt: &past},
 		{TenantSlug: "t", TenantName: "n", ProjectSlug: "p", ProjectName: "pn", PrincipalName: "u", PrincipalType: identity.PrincipalUser, InitialTaskGrants: []provisioning.BootstrapTaskGrant{{TaskID: ""}}},
+		{TenantSlug: "t", TenantName: "n", ProjectSlug: "p", ProjectName: "pn", PrincipalName: "u", PrincipalType: identity.PrincipalUser, InitialTaskGrants: []provisioning.BootstrapTaskGrant{{TaskID: "dup", CanRead: true}, {TaskID: "dup", CanWrite: true}}},
 		{TenantSlug: "t", TenantName: "n", ProjectSlug: "p", ProjectName: "pn", PrincipalName: "u", PrincipalType: identity.PrincipalUser, AllowedScopes: []identity.ScopeType{"bad_scope"}},
 	}
 	for i, sp := range badSpecs {
