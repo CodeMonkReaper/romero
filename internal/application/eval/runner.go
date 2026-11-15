@@ -264,7 +264,7 @@ func RunDataset(ctx context.Context, datasetPath string, maxTokens, hops int) (*
 	if err != nil {
 		return nil, err
 	}
-	remDistillationRatio, err := evaluateREMConsolidation(ctx, tenantID, projectID, callerAgent, now, ds.REMEpisodes)
+	remDistillationRatio, err := evaluateREMConsolidation(ctx, tenantID, projectID, callerAgent, now, ds.REMEpisodes, ds.Memories)
 	if err != nil {
 		return nil, err
 	}
@@ -330,11 +330,39 @@ func evaluateNLIContradictions(ctx context.Context, pairs []goldenNLIPair) (floa
 	return float64(caughtContradictions) / float64(expectedContradictions), nil
 }
 
+func goldenToMemory(tenantID, projectID, callerAgent uuid.UUID, now time.Time, gm goldenMemory) memory.Memory {
+	var ownerID *uuid.UUID
+	if gm.Owner == "caller" {
+		id := callerAgent
+		ownerID = &id
+	}
+	pid := projectID
+	return memory.Memory{
+		ID:              gm.ID,
+		TenantID:        tenantID,
+		ProjectID:       &pid,
+		OwnerAgentID:    ownerID,
+		ScopeType:       gm.ScopeType,
+		Type:            gm.Type,
+		Status:          gm.Status,
+		EpistemicStatus: gm.EpistemicStatus,
+		Confidence:      gm.Confidence,
+		Importance:      gm.Importance,
+		UtilityScore:    gm.UtilityScore,
+		TopicKey:        gm.TopicKey,
+		Summary:         gm.Summary,
+		Content:         gm.Content,
+		Tags:            gm.Tags,
+		UpdatedAt:       now,
+	}
+}
+
 func evaluateREMConsolidation(
 	ctx context.Context,
 	tenantID, projectID, callerAgent uuid.UUID,
 	now time.Time,
 	episodes []goldenMemory,
+	allMemories []goldenMemory,
 ) (float64, error) {
 	if len(episodes) == 0 {
 		return 0.0, nil
@@ -342,32 +370,15 @@ func evaluateREMConsolidation(
 	mems := make([]memory.Memory, 0, len(episodes))
 	vecs := make(map[uuid.UUID][]float32, len(episodes))
 	for _, gm := range episodes {
-		var ownerID *uuid.UUID
-		if gm.Owner == "caller" {
-			id := callerAgent
-			ownerID = &id
-		}
-		pid := projectID
-		mems = append(mems, memory.Memory{
-			ID:              gm.ID,
-			TenantID:        tenantID,
-			ProjectID:       &pid,
-			OwnerAgentID:    ownerID,
-			ScopeType:       gm.ScopeType,
-			Type:            gm.Type,
-			Status:          gm.Status,
-			EpistemicStatus: gm.EpistemicStatus,
-			Confidence:      gm.Confidence,
-			Importance:      gm.Importance,
-			UtilityScore:    gm.UtilityScore,
-			TopicKey:        gm.TopicKey,
-			Summary:         gm.Summary,
-			Content:         gm.Content,
-			Tags:            gm.Tags,
-			UpdatedAt:       now,
-		})
+		mems = append(mems, goldenToMemory(tenantID, projectID, callerAgent, now, gm))
 		if len(gm.DenseVec) > 0 {
 			vecs[gm.ID] = gm.DenseVec
+		}
+	}
+	verifiedMems := make([]memory.Memory, 0, len(allMemories))
+	for _, gm := range allMemories {
+		if gm.Status == memory.StatusActive && gm.EpistemicStatus == memory.EpistemicVerified {
+			verifiedMems = append(verifiedMems, goldenToMemory(tenantID, projectID, callerAgent, now, gm))
 		}
 	}
 
@@ -383,18 +394,31 @@ func evaluateREMConsolidation(
 		if err != nil {
 			return 0, fmt.Errorf("deterministic SLM distill cluster: %w", err)
 		}
-		pairs := make([]memory.NLIPairInput, 0, len(cluster.Episodes)*2)
+		draftText := strings.TrimSpace(draft.Summary + "\n" + draft.Content)
+		relevantVerified := memory.FilterVerifiedForScope(verifiedMems, cluster.ScopeTarget)
+		pairs := make([]memory.NLIPairInput, 0, len(cluster.Episodes)+len(relevantVerified))
 		for _, ep := range cluster.Episodes {
 			pairs = append(pairs, memory.NLIPairInput{
-				Premise:    draft.Summary + "\n" + draft.Content,
-				Hypothesis: ep.Summary + "\n" + ep.Content,
+				Premise:    draftText,
+				Hypothesis: strings.TrimSpace(ep.Summary + "\n" + ep.Content),
+			})
+		}
+		for _, v := range relevantVerified {
+			pairs = append(pairs, memory.NLIPairInput{
+				Premise:    draftText,
+				Hypothesis: strings.TrimSpace(v.Summary + "\n" + v.Content),
 			})
 		}
 		scores, err := nli.EvaluatePairs(ctx, pairs)
 		if err != nil {
 			return 0, fmt.Errorf("deterministic NLI validate distilled draft: %w", err)
 		}
-		if memory.ValidateDistilledNLI(scores, nil) {
+		if len(scores) != len(pairs) {
+			continue
+		}
+		sourceScores := scores[:len(cluster.Episodes)]
+		verifiedScores := scores[len(cluster.Episodes):]
+		if memory.ValidateDistilledNLI(sourceScores, verifiedScores) {
 			distilledOK++
 		}
 	}

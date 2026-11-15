@@ -22,6 +22,7 @@ import (
 type fakeConflictSvc struct {
 	listRes   []conflicts.ConflictRecordView
 	reviewRes *conflicts.ConflictRecordView
+	lastCmd   *conflicts.ReviewConflictCommand
 	err       error
 }
 
@@ -29,7 +30,10 @@ func (f fakeConflictSvc) ListConflicts(_ context.Context, _ identity.AuthContext
 	return f.listRes, f.err
 }
 
-func (f fakeConflictSvc) ReviewConflict(_ context.Context, _ identity.AuthContext, _ conflicts.ReviewConflictCommand) (*conflicts.ConflictRecordView, error) {
+func (f fakeConflictSvc) ReviewConflict(_ context.Context, _ identity.AuthContext, cmd conflicts.ReviewConflictCommand) (*conflicts.ConflictRecordView, error) {
+	if f.lastCmd != nil {
+		*f.lastCmd = cmd
+	}
 	return f.reviewRes, f.err
 }
 
@@ -259,6 +263,40 @@ func TestAdminConsolidateAndSystemStatusGovernor(t *testing.T) {
 		}
 		if gov.begins.Load() != 0 {
 			t.Fatalf("expected /api/v1/system/status not to trigger BeginAgentRequest, got %d", gov.begins.Load())
+		}
+	})
+
+	t.Run("POST /api/v1/conflicts/{id}/resolve forwards optional summary and content", func(t *testing.T) {
+		var captured conflicts.ReviewConflictCommand
+		conflictID := uuid.New()
+		winnerID := uuid.New()
+		h := newPhase03TestRouter(t, auth, fakeConflictSvc{
+			lastCmd:   &captured,
+			reviewRes: &conflicts.ConflictRecordView{ConflictID: conflictID},
+		}, nil, nil)
+		body := []byte(`{"winner_memory_id":"` + winnerID.String() + `","summary":"Merged fact","content":"Merged body","reason":"human synthesis"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/conflicts/"+conflictID.String()+"/resolve", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer valid-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("resolve status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+		if captured.Summary != "Merged fact" || captured.Content != "Merged body" || captured.Reason != "human synthesis" {
+			t.Fatalf("expected summary/content/reason forwarded, got %+v", captured)
+		}
+	})
+
+	t.Run("POST /api/v1/admin/consolidate maps ErrEngineUnavailable to 503", func(t *testing.T) {
+		h := newPhase03TestRouter(t, auth, nil, fakeConsolidationSvc{err: consolidation.ErrEngineUnavailable}, nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/consolidate", bytes.NewReader([]byte(`{}`)))
+		req.Header.Set("Authorization", "Bearer valid-key")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("consolidate engine unavailable status = %d, want 503: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

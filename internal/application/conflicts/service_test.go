@@ -2,6 +2,8 @@ package conflicts_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -280,5 +282,75 @@ func TestConflicts_EdgeCasesAndTaskPermissions(t *testing.T) {
 	res, err := svcRW.ReviewConflict(ctx, caller, conflicts.ReviewConflictCommand{ConflictID: pair.Relation.ID, WinnerMemoryID: mTask2.ID})
 	if err != nil || res.ToMemory.Status != memory.StatusActive || res.FromMemory.Status != memory.StatusSuperseded {
 		t.Fatalf("expected ToMemory winner resolution, got res=%+v err=%v", res, err)
+	}
+}
+
+func TestReviewConflict_MergedSummaryAndContent(t *testing.T) {
+	ctx := context.Background()
+	tenantID, projID := uuid.New(), uuid.New()
+	now := time.Now().UTC()
+
+	m1 := memory.Memory{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: &projID,
+		Type: memory.TypeSemantic, ScopeType: identity.ScopeProjectShared, Status: memory.StatusActive,
+		EpistemicStatus: memory.EpistemicObserved, Summary: "Old summary", Content: "Old content",
+		AlphaScore: 2, BetaScore: 1, PrimarySourceID: uuid.New(), Version: 1,
+		Clocks: memory.TriTemporalWindow{ObservedAt: now, ValidFrom: now, CreatedAt: now},
+	}
+	m2 := m1
+	m2.ID = uuid.New()
+	m2.Summary = "Conflicting summary"
+	m2.Content = "Conflicting content"
+
+	pair := memory.ConflictPairRow{
+		Relation:   memory.MemoryRelation{ID: uuid.New(), TenantID: tenantID, ProjectID: &projID, FromMemoryID: m1.ID, ToMemoryID: m2.ID, RelationType: memory.RelationContradicts, IsActive: true, ValidFrom: now, CreatedAt: now},
+		FromMemory: m1,
+		ToMemory:   m2,
+	}
+
+	// Whitespace-only merged summary fails validation without closing conflict.
+	memRepo := &fakeMemRepo{items: map[uuid.UUID]memory.Memory{m1.ID: m1, m2.ID: m2}}
+	confRepo := &fakeConflictRepo{pairs: []memory.ConflictPairRow{pair}}
+	svc, _ := conflicts.NewService(&fakeUOW{reg: &fakeReg{mems: memRepo, confs: confRepo, audit: &fakeAudit{}}}, confRepo, &fakeAudit{}, nil, nil, nil)
+	admin := identity.AuthContext{
+		TenantID:        tenantID,
+		PrincipalID:     uuid.New(),
+		PrincipalType:   identity.PrincipalUser,
+		IsAdmin:         true,
+		AllowedProjects: []uuid.UUID{projID},
+		AllowedScopes:   []identity.ScopeType{identity.ScopeProjectShared},
+	}
+
+	if _, err := svc.ReviewConflict(ctx, admin, conflicts.ReviewConflictCommand{
+		ConflictID:     pair.Relation.ID,
+		WinnerMemoryID: m1.ID,
+		Summary:        "   ",
+	}); !errors.Is(err, conflicts.ErrValidation) {
+		t.Fatalf("expected ErrValidation for whitespace summary, got %v", err)
+	}
+
+	mergedSummary := "Merged Postgres port 54329"
+	mergedContent := "Use Postgres on port 54329 for local verification."
+	res, err := svc.ReviewConflict(ctx, admin, conflicts.ReviewConflictCommand{
+		ConflictID:     pair.Relation.ID,
+		WinnerMemoryID: m1.ID,
+		Summary:        mergedSummary,
+		Content:        mergedContent,
+		Reason:         "merge both claims",
+	})
+	if err != nil {
+		t.Fatalf("ReviewConflict merged failed: %v", err)
+	}
+	if res.FromMemory.Summary != mergedSummary {
+		t.Fatalf("expected updated view summary %q, got %q", mergedSummary, res.FromMemory.Summary)
+	}
+	stored := memRepo.items[m1.ID]
+	sum := sha256.Sum256([]byte(mergedContent))
+	wantHash := hex.EncodeToString(sum[:])
+	if stored.Summary != mergedSummary || stored.Content != mergedContent || stored.ContentSHA256 != wantHash || stored.Version != 2 {
+		t.Fatalf("unexpected persisted merged winner: %+v", stored)
+	}
+	if len(memRepo.versions) != 2 || memRepo.versions[0].Summary != mergedSummary || memRepo.versions[0].Content != mergedContent {
+		t.Fatalf("expected immutable winner version snapshot with merged text, got %+v", memRepo.versions)
 	}
 }

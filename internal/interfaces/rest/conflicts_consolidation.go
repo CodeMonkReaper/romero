@@ -73,6 +73,8 @@ type resolveConflictInput struct {
 	ID   string `path:"id"`
 	Body struct {
 		WinnerMemoryID uuid.UUID `json:"winner_memory_id"`
+		Summary        string    `json:"summary,omitempty"`
+		Content        string    `json:"content,omitempty"`
 		Reason         string    `json:"reason,omitempty"`
 	}
 }
@@ -170,6 +172,8 @@ func registerPhase03Routes(api huma.API, deps RouterDeps) {
 			view, err := deps.Conflicts.ReviewConflict(ctx, auth, conflicts.ReviewConflictCommand{
 				ConflictID:     conflictID,
 				WinnerMemoryID: in.Body.WinnerMemoryID,
+				Summary:        in.Body.Summary,
+				Content:        in.Body.Content,
 				Reason:         in.Body.Reason,
 				CorrelationID:  "",
 			})
@@ -235,6 +239,8 @@ func mapConsolidationServiceErr(err error) error {
 		return huma.Error401Unauthorized("unauthorized")
 	case errors.Is(err, consolidation.ErrForbidden):
 		return huma.Error403Forbidden("forbidden")
+	case errors.Is(err, consolidation.ErrEngineUnavailable):
+		return huma.Error503ServiceUnavailable("consolidation engine unavailable")
 	default:
 		return huma.Error503ServiceUnavailable("consolidation service unavailable")
 	}

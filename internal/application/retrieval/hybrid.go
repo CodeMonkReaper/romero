@@ -494,7 +494,9 @@ func (s *Service) executeHybridSearch(
 			HasConflictAlert:      act.HasConflictAlert,
 		})
 	}
-	s.applyCrossEncoderRerank(ctx, q.Query, inputs)
+	if s.applyCrossEncoderRerank(ctx, q.Query, inputs) {
+		degradedMode = true
+	}
 	ranked := memory.RankCandidates(inputs, now, q.IncludeSuperseded, q.IncludeConsolidated)
 
 	if auditOp != "" {
@@ -517,9 +519,9 @@ func (s *Service) executeHybridSearch(
 	return ranked, embeddings, degradedMode, nil
 }
 
-func (s *Service) applyCrossEncoderRerank(ctx context.Context, query string, inputs []memory.CandidateRankingInput) {
+func (s *Service) applyCrossEncoderRerank(ctx context.Context, query string, inputs []memory.CandidateRankingInput) bool {
 	if s.reranker == nil || s.profile != governor.ProfileUltra || len(inputs) == 0 {
-		return
+		return false
 	}
 	indices := make([]int, len(inputs))
 	for i := range inputs {
@@ -542,7 +544,7 @@ func (s *Service) applyCrossEncoderRerank(ctx context.Context, query string, inp
 	}
 	logits, err := s.reranker.Rerank(ctx, query, cands)
 	if err != nil {
-		return
+		return true
 	}
 	for i := 0; i < topN; i++ {
 		idx := indices[i]
@@ -550,6 +552,7 @@ func (s *Service) applyCrossEncoderRerank(ctx context.Context, query string, inp
 			inputs[idx].SemanticScore = memory.FuseCrossEncoderScore(z, inputs[idx].SemanticScore, true)
 		}
 	}
+	return false
 }
 
 func validateSearchQuery(q SearchQuery) error {

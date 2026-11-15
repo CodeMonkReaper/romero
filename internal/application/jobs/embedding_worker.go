@@ -362,25 +362,5 @@ func markConflictedInTx(ctx context.Context, reg memory.RepositoryRegistry, targ
 	if err := reg.Memories().UpdateMemoryState(ctx, *target); err != nil {
 		return err
 	}
-	return reg.Memories().InsertMemoryVersion(ctx, memory.MemoryVersion{
-		ID:              uuid.New(),
-		MemoryID:        target.ID,
-		Version:         target.Version,
-		Summary:         target.Summary,
-		Content:         target.Content,
-		Tags:            target.Tags,
-		Entities:        target.Entities,
-		Metadata:        target.Metadata,
-		EpistemicStatus: target.EpistemicStatus,
-		AlphaScore:      target.AlphaScore,
-		BetaScore:       target.BetaScore,
-		Importance:      target.Importance,
-		UtilityScore:    target.UtilityScore,
-		Status:          target.Status,
-		ValidFrom:       target.Clocks.ValidFrom,
-		ValidUntil:      target.Clocks.ValidUntil,
-		ChangedBySource: &target.PrimarySourceID,
-		ChangeReason:    "nli_contradiction",
-		CreatedAt:       now,
-	})
+	return reg.Memories().InsertMemoryVersion(ctx, memory.NewVersionFromMemory(*target, "nli_contradiction", now))
 }

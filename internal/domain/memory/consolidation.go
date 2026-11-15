@@ -156,6 +156,34 @@ func ValidateDistilledNLI(sourceScores, verifiedScores []NLIScore) bool {
 	return true
 }
 
+// FilterVerifiedForScope filters active verified memories that share the target partition
+// so distilled drafts can be NLI-checked against canonical facts without cross-partition leaks.
+func FilterVerifiedForScope(verified []Memory, target identity.MemoryScopeTarget) []Memory {
+	out := make([]Memory, 0, len(verified))
+	for _, v := range verified {
+		if v.TenantID != target.TenantID {
+			continue
+		}
+		if v.ProjectID != nil && target.ProjectID != nil && *v.ProjectID != *target.ProjectID {
+			continue
+		}
+		if v.ScopeType == identity.ScopeAgentPrivate || v.ScopeType == identity.ScopeTaskShared {
+			vTarget := identity.MemoryScopeTarget{
+				TenantID:     v.TenantID,
+				ProjectID:    v.ProjectID,
+				OwnerAgentID: v.OwnerAgentID,
+				ScopeType:    v.ScopeType,
+				TaskID:       v.TaskID,
+			}
+			if !vTarget.SameTopicPartition(target) {
+				continue
+			}
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 func validScopeTarget(t identity.MemoryScopeTarget) bool {
 	if t.TenantID == uuid.Nil {
 		return false

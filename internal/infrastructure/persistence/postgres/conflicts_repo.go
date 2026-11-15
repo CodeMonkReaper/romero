@@ -191,35 +191,7 @@ func (r *conflictRepo) ListActiveConflicts(ctx context.Context, tenantID uuid.UU
 	}
 	out := make([]memory.ConflictPairRow, 0, len(rows))
 	for _, row := range rows {
-		pair, mapErr := mapConflictPair(conflictPairFields{
-			rID: row.RID, rTenantID: row.RTenantID, rProjectID: row.RProjectID,
-			rFromMemoryID: row.RFromMemoryID, rToMemoryID: row.RToMemoryID, rRelationType: row.RRelationType,
-			rWeight: row.RWeight, rNliEntailment: row.RNliEntailment, rNliContradiction: row.RNliContradiction,
-			rSourceID: row.RSourceID, rValidFrom: row.RValidFrom, rValidUntil: row.RValidUntil,
-			rIsActive: row.RIsActive, rNotes: row.RNotes, rCreatedAt: row.RCreatedAt,
-			fm: memoryRowFields{
-				ID: row.FmID, TenantID: row.FmTenantID, ProjectID: row.FmProjectID, OwnerAgentID: row.FmOwnerAgentID,
-				TaskID: row.FmTaskID, MemoryType: row.FmMemoryType, ScopeType: row.FmScopeType, Status: row.FmStatus,
-				TopicKey: row.FmTopicKey, Summary: row.FmSummary, Content: row.FmContent, ContentSha256: row.FmContentSha256,
-				TokenCount: row.FmTokenCount, Tags: row.FmTags, Entities: row.FmEntities, EpistemicStatus: row.FmEpistemicStatus,
-				AlphaScore: row.FmAlphaScore, BetaScore: row.FmBetaScore, Confidence: row.FmConfidence, Importance: row.FmImportance,
-				UtilityScore: row.FmUtilityScore, AccessCount: row.FmAccessCount, Version: row.FmVersion, NliChecked: row.FmNliChecked,
-				PrimarySourceID: row.FmPrimarySourceID, IdempotencyKey: row.FmIdempotencyKey, ObservedAt: row.FmObservedAt,
-				ValidFrom: row.FmValidFrom, ValidUntil: row.FmValidUntil, CreatedAt: row.FmCreatedAt, UpdatedAt: row.FmUpdatedAt,
-				LastAccessedAt: row.FmLastAccessedAt, Metadata: row.FmMetadata,
-			},
-			tm: memoryRowFields{
-				ID: row.TmID, TenantID: row.TmTenantID, ProjectID: row.TmProjectID, OwnerAgentID: row.TmOwnerAgentID,
-				TaskID: row.TmTaskID, MemoryType: row.TmMemoryType, ScopeType: row.TmScopeType, Status: row.TmStatus,
-				TopicKey: row.TmTopicKey, Summary: row.TmSummary, Content: row.TmContent, ContentSha256: row.TmContentSha256,
-				TokenCount: row.TmTokenCount, Tags: row.TmTags, Entities: row.TmEntities, EpistemicStatus: row.TmEpistemicStatus,
-				AlphaScore: row.TmAlphaScore, BetaScore: row.TmBetaScore, Confidence: row.TmConfidence, Importance: row.TmImportance,
-				UtilityScore: row.TmUtilityScore, AccessCount: row.TmAccessCount, Version: row.TmVersion, NliChecked: row.TmNliChecked,
-				PrimarySourceID: row.TmPrimarySourceID, IdempotencyKey: row.TmIdempotencyKey, ObservedAt: row.TmObservedAt,
-				ValidFrom: row.TmValidFrom, ValidUntil: row.TmValidUntil, CreatedAt: row.TmCreatedAt, UpdatedAt: row.TmUpdatedAt,
-				LastAccessedAt: row.TmLastAccessedAt, Metadata: row.TmMetadata,
-			},
-		})
+		pair, mapErr := mapActiveConflictRow(row)
 		if mapErr != nil {
 			return nil, mapErr
 		}
@@ -242,6 +214,10 @@ func (r *conflictRepo) GetConflictForUpdate(ctx context.Context, tenantID, confl
 		}
 		return nil, err
 	}
+	return mapActiveConflictRow(sqlcgen.ListActiveConflictsRow(row))
+}
+
+func mapActiveConflictRow(row sqlcgen.ListActiveConflictsRow) (*memory.ConflictPairRow, error) {
 	return mapConflictPair(conflictPairFields{
 		rID: row.RID, rTenantID: row.RTenantID, rProjectID: row.RProjectID,
 		rFromMemoryID: row.RFromMemoryID, rToMemoryID: row.RToMemoryID, rRelationType: row.RRelationType,

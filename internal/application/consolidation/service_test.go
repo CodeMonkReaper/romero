@@ -124,9 +124,13 @@ func (f *fakeSLM) DistillCluster(ctx context.Context, _ []memory.Memory) (memory
 }
 func (f *fakeSLM) UnloadVRAM(context.Context) error { f.unloads.Add(1); return nil }
 
-type fakeNLI struct{ scores []memory.NLIScore }
+type fakeNLI struct {
+	scores    []memory.NLIScore
+	lastPairs []memory.NLIPairInput
+}
 
-func (f *fakeNLI) EvaluatePairs(context.Context, []memory.NLIPairInput) ([]memory.NLIScore, error) {
+func (f *fakeNLI) EvaluatePairs(_ context.Context, pairs []memory.NLIPairInput) ([]memory.NLIScore, error) {
+	f.lastPairs = append([]memory.NLIPairInput(nil), pairs...)
 	return f.scores, nil
 }
 
@@ -392,5 +396,54 @@ func TestConsolidate_ErrorPathsAndPartitionFiltering(t *testing.T) {
 	svc5, _ := consolidation.NewService(errUOW{err: errors.New("tx fail")}, repo, &fakeSLM{draft: memory.DistilledMemoryDraft{Summary: "s"}}, nliPass, &fakeAudit{}, nil, nil, nil)
 	if _, err := svc5.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID}); !errors.Is(err, consolidation.ErrOperational) {
 		t.Fatalf("expected ErrOperational on tx fail, got %v", err)
+	}
+}
+
+func TestConsolidate_EngineUnavailableAndNLIDirection(t *testing.T) {
+	ctx := context.Background()
+	tenantID, projID := uuid.New(), uuid.New()
+	now := time.Now().UTC()
+	eps, vecs := makeClusterFixtures(tenantID, projID, now)
+	admin := identity.AuthContext{TenantID: tenantID, PrincipalID: uuid.New(), PrincipalType: identity.PrincipalUser, IsAdmin: true}
+	repo := &fakeConsolidationRepo{cands: eps, vecs: vecs}
+
+	// Nil SLM when !DryRun -> ErrEngineUnavailable; DryRun still succeeds.
+	svcNil, _ := consolidation.NewService(&fakeUOW{reg: newFakeReg()}, repo, nil, &fakeNLI{}, &fakeAudit{}, nil, nil, nil)
+	if _, err := svcNil.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID}); !errors.Is(err, consolidation.ErrEngineUnavailable) {
+		t.Fatalf("expected ErrEngineUnavailable with nil slm, got %v", err)
+	}
+	if res, err := svcNil.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID, DryRun: true}); err != nil || res.ClustersFound != 1 {
+		t.Fatalf("expected DryRun to work even when engines are nil, got res=%+v err=%v", res, err)
+	}
+
+	// Provider unavailable from SLM or NLI -> ErrEngineUnavailable without mutating memories.
+	regMut := newFakeReg()
+	svcSLMDown, _ := consolidation.NewService(&fakeUOW{reg: regMut}, repo, errSLM{err: memory.ErrProviderUnavailable}, &fakeNLI{}, regMut.audit, nil, nil, nil)
+	if _, err := svcSLMDown.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID}); !errors.Is(err, consolidation.ErrEngineUnavailable) {
+		t.Fatalf("expected ErrEngineUnavailable on SLM outage, got %v", err)
+	}
+	svcNLIDown, _ := consolidation.NewService(&fakeUOW{reg: regMut}, repo, &fakeSLM{draft: memory.DistilledMemoryDraft{Summary: "Distilled"}}, errNLI{err: memory.ErrProviderUnavailable}, regMut.audit, nil, nil, nil)
+	if _, err := svcNLIDown.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID}); !errors.Is(err, consolidation.ErrEngineUnavailable) {
+		t.Fatalf("expected ErrEngineUnavailable on NLI outage, got %v", err)
+	}
+	if len(regMut.mems) != 0 {
+		t.Fatalf("expected 0 memory writes when engine unavailable, got %d", len(regMut.mems))
+	}
+
+	// NLI pair direction: distilled draft MUST be Premise and episode MUST be Hypothesis.
+	regDir := newFakeReg()
+	for _, ep := range eps {
+		regDir.mems[ep.ID] = ep
+	}
+	nliRec := &fakeNLI{scores: []memory.NLIScore{{Entailment: 0.90}, {Entailment: 0.90}, {Entailment: 0.90}}}
+	svcDir, _ := consolidation.NewService(&fakeUOW{reg: regDir}, repo, &fakeSLM{draft: memory.DistilledMemoryDraft{MemoryType: memory.TypeSemantic, Summary: "DISTILLED_DRAFT_SUMMARY", Content: "DISTILLED_DRAFT_CONTENT"}}, nliRec, regDir.audit, nil, nil, nil)
+	if _, err := svcDir.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID}); err != nil {
+		t.Fatalf("Consolidate failed: %v", err)
+	}
+	if len(nliRec.lastPairs) != 3 {
+		t.Fatalf("expected 3 NLI pairs, got %d", len(nliRec.lastPairs))
+	}
+	if nliRec.lastPairs[0].Premise != "DISTILLED_DRAFT_SUMMARY\nDISTILLED_DRAFT_CONTENT" {
+		t.Fatalf("expected distilled draft in Premise, got %q", nliRec.lastPairs[0].Premise)
 	}
 }

@@ -46,20 +46,11 @@ func NewQwenSLMClient(cfg SLMConfig) *QwenSLMClient {
 	if timeout <= 0 {
 		timeout = defaultSLMTimeout
 	}
-	transport := &http.Transport{
-		MaxIdleConns:        16,
-		MaxIdleConnsPerHost: 8,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-	}
 	return &QwenSLMClient{
-		baseURL:   strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		modelName: modelName,
-		enabled:   cfg.Enabled,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
+		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		modelName:  modelName,
+		enabled:    cfg.Enabled,
+		httpClient: newNeuralHTTPClient(timeout, 16, 8),
 	}
 }
 

@@ -52,6 +52,7 @@ type Querier interface {
 	InsertSource(ctx context.Context, arg InsertSourceParams) error
 	InsertTenant(ctx context.Context, arg InsertTenantParams) (Tenant, error)
 	ListActiveConflicts(ctx context.Context, arg ListActiveConflictsParams) ([]ListActiveConflictsRow, error)
+	ListActiveREMTargets(ctx context.Context) ([]ListActiveREMTargetsRow, error)
 	ListActiveRelationsByMemoryID(ctx context.Context, arg ListActiveRelationsByMemoryIDParams) ([]MemoryRelation, error)
 	ListActiveVerifiedByProject(ctx context.Context, arg ListActiveVerifiedByProjectParams) ([]ListActiveVerifiedByProjectRow, error)
 	ListREMConsolidationCandidates(ctx context.Context, arg ListREMConsolidationCandidatesParams) ([]ListREMConsolidationCandidatesRow, error)

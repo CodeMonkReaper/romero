@@ -12,6 +12,7 @@ import (
 
 	"github.com/romero-project/romero/internal/domain/identity"
 	"github.com/romero-project/romero/internal/domain/memory"
+	"github.com/romero-project/romero/internal/domain/security"
 )
 
 var (
@@ -44,9 +45,12 @@ type ListConflictsFilter struct {
 }
 
 // ReviewConflictCommand arbitrates an active conflict edge in favor of WinnerMemoryID.
+// Optional Summary and Content allow the reviewer to persist a merged synthesis on the winner.
 type ReviewConflictCommand struct {
 	ConflictID     uuid.UUID
 	WinnerMemoryID uuid.UUID
+	Summary        string
+	Content        string
 	Reason         string
 	CorrelationID  string
 }
@@ -243,6 +247,30 @@ func (s *Service) ReviewConflict(ctx context.Context, auth identity.AuthContext,
 		if err := reg.Memories().CloseMemoryVersionValidity(ctx, winner.ID, winner.Version, now); err != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, err)
 		}
+		if cmd.Summary != "" || cmd.Content != "" {
+			nextSummary := winner.Summary
+			if cmd.Summary != "" {
+				nextSummary = cmd.Summary
+			}
+			nextContent := winner.Content
+			if cmd.Content != "" {
+				nextContent = cmd.Content
+			}
+			sanitized, sErr := security.SanitizeInput(nextSummary, nextContent)
+			if sErr != nil {
+				return fmt.Errorf("%w: %v", ErrValidation, sErr)
+			}
+			winner.Summary = sanitized.Summary
+			winner.Content = sanitized.Content
+			winner.ContentSHA256 = sanitized.ContentSHA256
+			winner.TokenCount = sanitized.TokenCount
+			if sanitized.Sanitized {
+				if winner.Metadata == nil {
+					winner.Metadata = make(map[string]any, 1)
+				}
+				winner.Metadata["sanitized"] = true
+			}
+		}
 		winner.Status = memory.StatusActive
 		winner.AlphaScore += reviewWinnerAlphaDelta
 		if winner.AlphaScore+winner.BetaScore > 0 {
@@ -253,7 +281,7 @@ func (s *Service) ReviewConflict(ctx context.Context, auth identity.AuthContext,
 		if err := reg.Memories().UpdateMemoryState(ctx, winner); err != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, err)
 		}
-		if err := reg.Memories().InsertMemoryVersion(ctx, buildReviewVersion(winner, "conflict_review_winner", now)); err != nil {
+		if err := reg.Memories().InsertMemoryVersion(ctx, memory.NewVersionFromMemory(winner, "conflict_review_winner", now)); err != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, err)
 		}
 
@@ -267,7 +295,7 @@ func (s *Service) ReviewConflict(ctx context.Context, auth identity.AuthContext,
 		if err := reg.Memories().UpdateMemoryState(ctx, loser); err != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, err)
 		}
-		if err := reg.Memories().InsertMemoryVersion(ctx, buildReviewVersion(loser, "conflict_review_loser", now)); err != nil {
+		if err := reg.Memories().InsertMemoryVersion(ctx, memory.NewVersionFromMemory(loser, "conflict_review_loser", now)); err != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, err)
 		}
 
@@ -402,30 +430,6 @@ func (s *Service) canWriteEndpoint(ctx context.Context, auth identity.AuthContex
 		return auth.AuthorizeTaskMemory(ctx, s.perms, target, identity.TaskWrite)
 	}
 	return auth.CanWriteScope(m.ProjectID, m.ScopeType, m.TaskID)
-}
-
-func buildReviewVersion(m memory.Memory, reason string, now time.Time) memory.MemoryVersion {
-	return memory.MemoryVersion{
-		ID:              uuid.New(),
-		MemoryID:        m.ID,
-		Version:         m.Version,
-		Summary:         m.Summary,
-		Content:         m.Content,
-		Tags:            append([]string(nil), m.Tags...),
-		Entities:        append([]string(nil), m.Entities...),
-		Metadata:        m.Metadata,
-		EpistemicStatus: m.EpistemicStatus,
-		AlphaScore:      m.AlphaScore,
-		BetaScore:       m.BetaScore,
-		Importance:      m.Importance,
-		UtilityScore:    m.UtilityScore,
-		Status:          m.Status,
-		ValidFrom:       m.Clocks.ValidFrom,
-		ValidUntil:      m.Clocks.ValidUntil,
-		ChangedBySource: &m.PrimarySourceID,
-		ChangeReason:    reason,
-		CreatedAt:       now,
-	}
 }
 
 func toConflictView(row memory.ConflictPairRow) ConflictRecordView {

@@ -61,8 +61,12 @@ func TestSearchMemories_CrossEncoderRerankAndFallback(t *testing.T) {
 			},
 		},
 		mems: map[uuid.UUID]memory.Memory{m1.ID: m1, m2.ID: m2},
+		embeddings: map[uuid.UUID][]float32{
+			m1.ID: {1, 0},
+			m2.ID: {1, 0},
+		},
 	}
-	svc.SetHybridDeps(searchRepo, &fakeEmbedder{}, proj)
+	svc.SetHybridDeps(searchRepo, &fakeEmbedder{vec: []float32{1, 0}}, proj)
 
 	reranker := &fakeReranker{scores: map[uuid.UUID]float32{m1.ID: -4.0, m2.ID: 4.0}}
 	svc.WithReranker(reranker, governor.ProfileUltra)
@@ -75,15 +79,15 @@ func TestSearchMemories_CrossEncoderRerankAndFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchMemories failed: %v", err)
 	}
-	if reranker.calls != 1 || len(res.Candidates) != 2 || res.Candidates[0].ID != m2.ID {
-		t.Fatalf("expected Cross-Encoder to promote m2 over m1: calls=%d candidates=%+v", reranker.calls, res.Candidates)
+	if reranker.calls != 1 || len(res.Candidates) != 2 || res.Candidates[0].ID != m2.ID || res.DegradedMode {
+		t.Fatalf("expected Cross-Encoder to promote m2 over m1 without degraded_mode: calls=%d degraded=%v candidates=%+v", reranker.calls, res.DegradedMode, res.Candidates)
 	}
 
-	// Fallback when reranker errors: search still succeeds cleanly.
+	// Fallback when reranker errors: search still succeeds cleanly and sets DegradedMode.
 	reranker.err = errors.New("reranker down")
 	res2, err := svc.SearchMemories(ctx, auth, retrieval.SearchQuery{Query: "answer", Limit: 5})
-	if err != nil || len(res2.Candidates) != 2 {
-		t.Fatalf("expected clean fallback when reranker fails, got err=%v candidates=%d", err, len(res2.Candidates))
+	if err != nil || len(res2.Candidates) != 2 || !res2.DegradedMode {
+		t.Fatalf("expected clean fallback with DegradedMode=true when reranker fails, got err=%v degraded=%v candidates=%d", err, res2.DegradedMode, len(res2.Candidates))
 	}
 
 	// Non-ultra profile bypasses Cross-Encoder reranking completely.
