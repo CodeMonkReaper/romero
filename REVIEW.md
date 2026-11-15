@@ -1,6 +1,6 @@
 # REVIEW.md — Cómo se evalúa el código en ROMERO
 
-> Ratificado junto con `02-DOCS/wiki/sdd/constitution.md` (v1.0.0).
+> Ratificado junto con `02-DOCS/wiki/sdd/constitution.md` (v2.0.0).
 > Todo revisor (`review`, `finding-verifier` y panel `refuter-*`) lee este archivo antes de inspeccionar un diff.
 
 ## 1. Formato del veredicto

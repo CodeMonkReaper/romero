@@ -278,6 +278,8 @@ type searchMemoriesInput struct {
 		ProjectIDs          []uuid.UUID          `json:"project_ids,omitempty"`
 		Scopes              []identity.ScopeType `json:"scopes,omitempty"`
 		TaskID              string               `json:"task_id,omitempty"`
+		MemoryTypes         []memory.MemoryType  `json:"memory_types,omitempty"`
+		MinConfidence       *float32             `json:"min_confidence,omitempty"`
 		Limit               int                  `json:"limit,omitempty"`
 		Hops                int                  `json:"hops,omitempty"`
 		IncludeSuperseded   bool                 `json:"include_superseded,omitempty"`
@@ -580,6 +582,8 @@ func registerRoutes(api huma.API, deps RouterDeps) {
 			ProjectIDs:          in.Body.ProjectIDs,
 			Scopes:              in.Body.Scopes,
 			TaskID:              in.Body.TaskID,
+			MemoryTypes:         in.Body.MemoryTypes,
+			MinConfidence:       in.Body.MinConfidence,
 			Limit:               in.Body.Limit,
 			Hops:                in.Body.Hops,
 			IncludeSuperseded:   in.Body.IncludeSuperseded,

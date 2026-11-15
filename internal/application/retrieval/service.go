@@ -174,6 +174,24 @@ func (s *Service) GetMemory(ctx context.Context, auth identity.AuthContext, quer
 				}
 				return fmt.Errorf("%w: %v", ErrOperational, pitErr)
 			}
+			allVersions, verErr := reg.Memories().ListVersionsByMemoryID(ctx, mem.ID)
+			if verErr != nil {
+				return fmt.Errorf("%w: %v", ErrOperational, verErr)
+			}
+			versions := make([]memory.MemoryVersion, 0, len(allVersions))
+			for _, v := range allVersions {
+				if !v.CreatedAt.After(knownAt) {
+					versions = append(versions, v)
+				}
+			}
+			rawRelations, relErr := reg.Memories().ListActiveRelationsByMemoryID(ctx, auth.TenantID, mem.ID)
+			if relErr != nil {
+				return fmt.Errorf("%w: %v", ErrOperational, relErr)
+			}
+			relations, visErr := s.filterVisibleRelations(ctx, auth, reg, mem.ID, rawRelations)
+			if visErr != nil {
+				return visErr
+			}
 			conf, confErr := memory.ExpectedConfidence(pit.AlphaScore, pit.BetaScore)
 			if confErr != nil {
 				conf = mem.Confidence
@@ -197,6 +215,8 @@ func (s *Service) GetMemory(ctx context.Context, auth identity.AuthContext, quer
 			}
 			detail = &MemoryDetail{
 				Memory:               *mem,
+				Versions:             versions,
+				Relations:            relations,
 				PointInTimeVersion:   pit,
 				UntrustedXMLEnvelope: env,
 			}
@@ -207,9 +227,13 @@ func (s *Service) GetMemory(ctx context.Context, auth identity.AuthContext, quer
 		if verErr != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, verErr)
 		}
-		relations, relErr := reg.Memories().ListActiveRelationsByMemoryID(ctx, auth.TenantID, mem.ID)
+		rawRelations, relErr := reg.Memories().ListActiveRelationsByMemoryID(ctx, auth.TenantID, mem.ID)
 		if relErr != nil {
 			return fmt.Errorf("%w: %v", ErrOperational, relErr)
+		}
+		relations, visErr := s.filterVisibleRelations(ctx, auth, reg, mem.ID, rawRelations)
+		if visErr != nil {
+			return visErr
 		}
 		env := security.WrapUntrustedXML(mem.ID, string(mem.Type), string(mem.EpistemicStatus), mem.Confidence, mem.PrimarySourceID.String(), mem.Content)
 		if err := reg.Audit().RecordAllowed(ctx, memory.AuditEvent{
@@ -358,6 +382,51 @@ func (s *Service) authorizeRead(ctx context.Context, auth identity.AuthContext, 
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Service) filterVisibleRelations(
+	ctx context.Context,
+	auth identity.AuthContext,
+	reg memory.RepositoryRegistry,
+	centerID uuid.UUID,
+	rels []memory.MemoryRelation,
+) ([]memory.MemoryRelation, error) {
+	if len(rels) == 0 {
+		return rels, nil
+	}
+	peerCache := make(map[uuid.UUID]bool, len(rels))
+	visible := make([]memory.MemoryRelation, 0, len(rels))
+	for _, rel := range rels {
+		peerID := rel.ToMemoryID
+		if peerID == centerID {
+			peerID = rel.FromMemoryID
+		}
+		allowed, cached := peerCache[peerID]
+		if !cached {
+			peerMem, err := reg.Memories().GetMemoryByID(ctx, auth.TenantID, peerID)
+			if err != nil {
+				if errors.Is(err, memory.ErrNotFound) {
+					peerCache[peerID] = false
+					continue
+				}
+				return nil, fmt.Errorf("%w: %v", ErrOperational, err)
+			}
+			accessErr := s.authorizeRead(ctx, auth, peerMem)
+			if accessErr != nil {
+				if errors.Is(accessErr, ErrNotFound) {
+					peerCache[peerID] = false
+					continue
+				}
+				return nil, accessErr
+			}
+			allowed = true
+			peerCache[peerID] = true
+		}
+		if allowed {
+			visible = append(visible, rel)
+		}
+	}
+	return visible, nil
 }
 
 func (s *Service) recordDenied(

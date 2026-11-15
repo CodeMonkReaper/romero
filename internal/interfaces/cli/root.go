@@ -42,6 +42,7 @@ func NewRootCmd(deps Dependencies) *cobra.Command {
 		newPrincipalCmd(&gf, deps),
 		newTaskPermissionCmd(&gf, deps),
 		newServeCmd(&gf, deps),
+		newMCPCmd(&gf, deps),
 		newEvalCmd(deps),
 		newConsolidateCmd(&gf, deps),
 	)
@@ -49,13 +50,16 @@ func NewRootCmd(deps Dependencies) *cobra.Command {
 }
 
 func newServeCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
-	var listenAddr string
+	var (
+		listenAddr    string
+		mcpListenAddr string
+	)
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the authenticated ROMERO REST server and durable opaque worker",
+		Short: "Start the authenticated ROMERO REST + MCP server and durable opaque worker",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if deps.Serve == nil {
+			if deps.ServeWithMCP == nil && deps.Serve == nil {
 				return errors.New("server dependency is not configured")
 			}
 			dsn, err := resolveDSN(gf.dsn, gf.configPath)
@@ -63,12 +67,66 @@ func newServeCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 				return err
 			}
 			addr := resolveListenAddr(listenAddr, gf.configPath)
+			mcpAddr := resolveMCPListenAddr(mcpListenAddr, gf.configPath)
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if deps.ServeWithMCP != nil {
+				return deps.ServeWithMCP(ctx, dsn, addr, mcpAddr)
+			}
 			return deps.Serve(ctx, dsn, addr)
 		},
 	}
 	cmd.Flags().StringVar(&listenAddr, "listen", "", "HTTP listen address (overrides ROMERO_LISTEN_ADDR and config)")
+	cmd.Flags().StringVar(&mcpListenAddr, "mcp-listen", "", "MCP HTTP/SSE listen address (overrides ROMERO_MCP_LISTEN_ADDR and config; set 'disabled' to skip)")
+	return cmd
+}
+
+func newMCPCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
+	var (
+		transport  string
+		listenAddr string
+		apiKey     string
+	)
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Start the Zero-Trust ROMERO MCP server over stdio or HTTP/SSE",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if deps.MCP == nil {
+				return errors.New("mcp dependency is not configured")
+			}
+			mode := strings.ToLower(strings.TrimSpace(transport))
+			if mode != "stdio" && mode != "sse" {
+				return fmt.Errorf("unsupported --transport %q (expected stdio or sse)", transport)
+			}
+			dsn, err := resolveDSN(gf.dsn, gf.configPath)
+			if err != nil {
+				return err
+			}
+			rawKey := resolveAPIKey(apiKey)
+			if mode == "stdio" && rawKey == "" {
+				return errors.New("api key is required for stdio transport via --api-key or ROMERO_API_KEY")
+			}
+			addr := ""
+			if mode == "sse" {
+				addr = resolveMCPListenAddr(listenAddr, gf.configPath)
+			}
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return deps.MCP(ctx, MCPServeOptions{
+				DSN:        dsn,
+				Transport:  mode,
+				ListenAddr: addr,
+				APIKey:     rawKey,
+				Stdin:      cmd.InOrStdin(),
+				Stdout:     cmd.OutOrStdout(),
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&transport, "transport", "stdio", "MCP transport mode: stdio or sse")
+	f.StringVar(&listenAddr, "listen", "", "HTTP/SSE listen address when --transport sse")
+	f.StringVar(&apiKey, "api-key", "", "API key for stdio authentication (overrides ROMERO_API_KEY)")
 	return cmd
 }
 

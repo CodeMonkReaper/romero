@@ -35,6 +35,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Enmienda — autorización explícita por tarea | [Contrato](sdd/specs/phase-01-task-authorization-draft.md) · [plan](sdd/plans/phase-01-task-authorization-draft.md) |
 | Spec — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/specs/phase-02-hybrid-retrieval.md` |
 | Spec — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM | `02-DOCS/wiki/sdd/specs/phase-03-nli-governor-rem.md` |
+| Spec — Phase 04 Servidor MCP de Memoria Cognitiva y Librería Cliente Exportable para Gandalf Wizard | `02-DOCS/wiki/sdd/specs/phase-04-mcp-server.md` |
 
 ## Planes Técnicos (`sdd/plans/`)
 
@@ -43,6 +44,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Plan — Phase 01 Foundation (Gobernanza Zero-Trust y Persistencia Tri-Temporal) | `02-DOCS/wiki/sdd/plans/phase-01-foundation.md` |
 | Plan — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/plans/phase-02-hybrid-retrieval.md` |
 | Plan — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM | `02-DOCS/wiki/sdd/plans/phase-03-nli-governor-rem.md` |
+| Plan — Phase 04 Servidor MCP de Memoria Cognitiva y Librería Cliente Exportable para Gandalf Wizard | `02-DOCS/wiki/sdd/plans/phase-04-mcp-server.md` |
 
 ## Análisis de Consistencia (`sdd/analysis/`)
 
@@ -52,6 +54,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Analysis — autorización por tarea y solicitudes opacas | [Informe 2026-11-14](sdd/analysis/phase-01-task-authorization-2026-11-14.md) |
 | Analysis — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/analysis/phase-02-hybrid-retrieval.md` |
 | Analysis — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM | `02-DOCS/wiki/sdd/analysis/phase-03-nli-governor-rem.md` |
+| Analysis — Phase 04 Servidor MCP de Memoria Cognitiva y Librería Cliente Exportable para Gandalf Wizard | `02-DOCS/wiki/sdd/analysis/phase-04-mcp-server.md` |
 
 ## Progreso de Implementación (`sdd/progress/`)
 
@@ -60,6 +63,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Progress Ledger — Phase 01 Foundation | `02-DOCS/wiki/sdd/progress/phase-01-foundation.md` |
 | Progress Ledger — Phase 02 Hybrid Retrieval | `02-DOCS/wiki/sdd/progress/phase-02-hybrid-retrieval.md` |
 | Progress Ledger — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM | `02-DOCS/wiki/sdd/progress/phase-03-nli-governor-rem.md` |
+| Progress Ledger — Phase 04 Servidor MCP y Librería Cliente Exportable | `02-DOCS/wiki/sdd/progress/phase-04-mcp-server.md` |
 
 ## Verificación de T001
 

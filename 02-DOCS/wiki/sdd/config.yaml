@@ -10,7 +10,7 @@ project:
     - go-mod
   monorepo: false
   signals:
-    - constitution:v1.0.0
+    - constitution:v2.0.0
     - master-spec:v2.0.0
 sdd:
   artifact_store: 02-DOCS/wiki/sdd

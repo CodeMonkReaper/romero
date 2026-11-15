@@ -1,5 +1,50 @@
 # SDD Decisions Log (`02-DOCS/wiki/sdd/decisions.md`)
 
+## 2026-11-15 — Enmienda Constitucional `v2.0.0` (Principio 2: Servidor MCP sobre Librería Estándar Go de Alto Rendimiento)
+
+- **Tarea / Fase:** `constitution` + resolución de `analyze` (`phase-04-mcp-server`)
+- **Contexto:** La compuerta `analyze` detectó una contradicción entre el Principio 2 original de `02-DOCS/wiki/sdd/constitution.md` (`v1.0.0`, que citaba `mcp-go`) y el plan técnico de Fase 04 (`02-DOCS/wiki/sdd/plans/phase-04-mcp-server.md`, que implementaba el servidor MCP sobre la librería estándar de Go).
+- **Opciones consideradas:**
+  1. **Ruta A (`mcp-go`):** Añadir `github.com/mark3labs/mcp-go` a `go.mod` y envolver su `SSEServer`, asumiendo doble pasada de deserialización JSON (`bytes -> map[string]any -> struct`, $\approx 0.12\text{–}0.35\text{ ms}$ y $25\text{–}60\text{ allocs/op}$).
+  2. **Ruta B (Librería estándar Go + Enmienda MAJOR `v2.0.0`):** Enmendar el Principio 2 de la Constitución a `v2.0.0` para implementar el servidor MCP JSON-RPC 2.0 (`stdio`, `HTTP/SSE` y `Streamable HTTP`) directamente sobre la librería estándar de Go (`net/http`, `encoding/json`, `bufio`).
+- **Decisión:** Ruta B (ratificada explícitamente por el usuario).
+- **Por qué:** Reduce la latencia de la capa MCP a $\approx 15\text{–}40\text{ }\mu\text{s}$ con una sola pasada de deserialización JSON directo al struct tipado (~8x más rápido y ~10x menos presión sobre el recolector de basura), permite invocar `PowerGovernor.BeginAgentRequest()` en la primera línea antes de decodificar argumentos ($\le 5\text{ }\mu\text{s}$), da control directo sobre la tabla de sesiones SSE Zero-Trust `(sessionID -> TenantID, PrincipalID)` y mantiene `go.mod` con cero dependencias externas adicionales.
+
+## 2026-11-15 — Plan técnico `phase-04-mcp-server` (`02-DOCS/wiki/sdd/plans/phase-04-mcp-server.md`)
+
+- **Tarea / Fase:** `plan` (`phase-04-mcp-server`)
+- **Contexto:** Diseño de la arquitectura, contratos entre componentes, flujo de datos, estrategia de pruebas por criterio (`AC-01`..`AC-07`), secuenciación y mitigación de riesgos para el Servidor MCP de 5 herramientas canónicas (`internal/interfaces/mcp`) y la librería cliente exportable (`pkg/romeroclient`).
+- **Opciones consideradas:**
+  1. Implementar MCP `HTTP/SSE` como un proceso separado de `romero serve` y compartir tipos internos de `internal/domain` en el cliente Go.
+  2. Implementar el adaptador MCP (`internal/interfaces/mcp`) con JSON-RPC 2.0 sobre la librería estándar (`stdio` + `HTTP/SSE` `GET /sse`, `POST /message` vinculado a `(TenantID, PrincipalID)` de la sesión, y `POST /mcp`), integrándolo dentro de `romero serve` (`:8421` según `mcp_sse_port`) para compartir en RAM la misma instancia de `cachel1.CognitiveGraph` y `governor.PowerGovernor` con REST (`:8420`) —además del subcomando autónomo `romero mcp`—, reforzar `RetrievalService.GetMemory` para filtrar `Relations` verificando `authorizeRead` sobre ambos extremos de cada arista, y construir `pkg/romeroclient` con cero importaciones de `internal/` verificado por prueba estática de AST.
+- **Decisión:** Opción 2.
+- **Por qué:** Garantiza coherencia instantánea ($0\text{ ms}$) de la Caché Cognitiva L1 *write-through* y preempción en $< 10\text{ ms}` del `context.CancelFunc` de Sueño REM entre llamadas REST y MCP (`AC-06`), cierra cualquier vector de fuga de identificadores por relaciones o secuestro de sesión SSE (`AC-02`, `AC-05`), y asegura que el repositorio externo de **Gandalf Wizard** pueda importar `github.com/romero-project/romero/pkg/romeroclient` sin restricciones del compilador Go (`AC-07`).
+
+## 2026-11-15 — Clarificación (`clarify`) de `phase-04-mcp-server`
+
+- **Tarea / Fase:** `clarify` (`phase-04-mcp-server`)
+- **Contexto:** Cierre de brechas de la especificación `02-DOCS/wiki/sdd/specs/phase-04-mcp-server.md` tras recorrer la lista de verificación de `clarify` sobre las cuatro preguntas ASDD y los límites fuera de alcance.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Coordinación de Caché L1 en RAM y `PowerGovernor` entre `romero serve` y MCP `HTTP/SSE` (Q1):** `romero serve` levanta tanto el servidor REST (`:8420`) como el listener MCP `HTTP/SSE` (`mcp_sse_port`, `:8421` por defecto) en el mismo proceso compartiendo la misma instancia en RAM de la Caché Cognitiva L1 (`cachel1.GraphCache`), del `PowerGovernor` y de los trabajadores en segundo plano, además de mantener el subcomando `romero mcp` para sesiones `stdio` locales (por defecto) y `sse` autónomo.
+  2. **Alcance de `romero_memory_save`:** Mapea directamente a `CaptureMemory` (incluyendo supersesión automática por `topic_key` cuando el rango epistemológico lo permite y aristas `relations`), manteniendo las mutaciones explícitas por identificador (`UpdateMemory`, `SupersedeMemory`, `ArchiveMemory`) en REST y en `pkg/romeroclient` para respetar el tope estricto de 5 herramientas MCP (Principio 9).
+  3. **Validación de las 4 suposiciones tomadas (`validated (held)`):**
+     - `romero mcp` soporta `--transport stdio|sse` (`stdio` por defecto con `--api-key` / `ROMERO_API_KEY`) y `romero serve` expone MCP `HTTP/SSE` en `mcp_sse_port` (`:8421`).
+     - `romero_memory_get` admite hasta `20` identificadores en `memory_ids[]` (error de validación si está vacío sin `memory_id` o si supera `20`).
+     - Errores de negocio (`422`, `403`, `409`, `404`, `503`) en las 5 herramientas MCP se devuelven como errores estructurados de herramienta (`validation_error`, `forbidden`, `conflict`, `not_found`, `service_unavailable`) sin cerrar la sesión de transporte.
+     - `pkg/romeroclient` no importa ningún paquete bajo `internal/` para permitir su importación limpia desde el repositorio externo de Gandalf Wizard.
+
+## 2026-11-15 — Especificación funcional `phase-04-mcp-server` (Servidor MCP de 5 Herramientas Canónicas, Divulgación Progresiva y Transporte Dual)
+
+- **Tarea / Fase:** `specify` (`phase-04-mcp-server`)
+- **Contexto:** Definición del contrato funcional (QUÉ y POR QUÉ) para la Fase 04 (Sprint 5) de ROMERO, resolviendo 5 decisiones de frontera con el usuario antes de redactar `02-DOCS/wiki/sdd/specs/phase-04-mcp-server.md`.
+- **Opciones consideradas y decisiones adoptadas:**
+  1. **Modo de ejecución ASDD:** Flujo con aprobación humana por fase (*gated*: `specify` -> `clarify` -> `plan` -> `tasks` -> `analyze` -> `implement`).
+  2. **Alcance funcional de Fase 04 (actualizado a Opción A):** Exponer tanto el Servidor MCP (`stdio` y `HTTP/SSE`) con las 5 herramientas canónicas (`romero_memory_save`, `romero_memory_search`, `romero_memory_get`, `romero_memory_context`, `romero_memory_feedback`) como la librería cliente pública exportable (`pkg/romeroclient`, libre de dependencias a `internal/`) en este repositorio para que el proyecto independiente Gandalf Wizard pueda importarla directamente con `go get`.
+  3. **Autenticación Zero-Trust y preempción en transportes MCP:** En modo `stdio`, autenticar una sola vez al iniciar mediante `--api-key` / `ROMERO_API_KEY` asociando el `AuthContext` a la sesión del proceso; en modo `HTTP/SSE`, exigir cabecera `Authorization: Bearer <key>` o `X-API-Key` en cada solicitud resolviendo el `AuthContext` por petición; en ambos transportes, toda invocación de herramienta activa `BeginAgentRequest()` en el `PowerGovernor` para interrumpir cualquier ciclo de `rem_sleep` en $< 10\text{ ms}$.
+  4. **Contrato de `romero_memory_get` (Fase 2 de Divulgación Progresiva):** Aceptar tanto un `memory_id` individual como un lote acotado `memory_ids[]` ($1..20$) con soporte opcional *Point-in-Time* (`as_of` o `valid_at` + `known_at`), devolviendo el `content` envuelto en `<romero_memory ... untrusted_content="true">`, el historial de versiones y las aristas causales visibles, y reportando como `not_found` opaco (con auditoría `denied`) cualquier ID inexistente o fuera del ámbito legible sin abortar el resto del lote.
+  5. **Recibos opacos en escrituras sin lectura (`romero_memory_save` y `romero_memory_feedback`):** Cuando un agente con permiso de solo-escritura en `task_shared` invoca `romero_memory_save` o `romero_memory_feedback`, devolver una respuesta estructurada con `status = "accepted"` y el `request_id` opaco, preservando la opacidad Zero-Trust establecida en la Fase 01.
+- **Por qué:** Cumple el Principio 9 de la Constitución (tope estricto de 5 herramientas MCP con divulgación progresiva) manteniendo el servidor MCP como un adaptador delgado sobre los casos de uso existentes bajo aislamiento Zero-Trust ($0.00\%$ de fuga) y preempción inmediata del Sueño REM.
+
 ## 2026-11-15 — Plan técnico `phase-03-nli-governor-rem` (`02-DOCS/wiki/sdd/plans/phase-03-nli-governor-rem.md`)
 
 - **Tarea / Fase:** `plan` (`phase-03-nli-governor-rem`)

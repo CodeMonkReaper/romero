@@ -32,6 +32,7 @@ import (
 	"github.com/romero-project/romero/internal/infrastructure/neural"
 	"github.com/romero-project/romero/internal/infrastructure/persistence/postgres"
 	"github.com/romero-project/romero/internal/interfaces/cli"
+	"github.com/romero-project/romero/internal/interfaces/mcp"
 	"github.com/romero-project/romero/internal/interfaces/rest"
 	"github.com/romero-project/romero/migrations"
 )
@@ -41,6 +42,8 @@ func defaultDependencies() cli.Dependencies {
 		Migrator:        gooseMigrator{},
 		OpenProvisioner: openPostgresProvisioner,
 		Serve:           servePostgresServer,
+		ServeWithMCP:    servePostgresServerWithMCP,
+		MCP:             runPostgresMCP,
 		Eval:            eval.RunDataset,
 		Consolidate:     runPostgresConsolidation,
 	}
@@ -301,20 +304,39 @@ func mapAuthCandidates(rows []postgres.PrincipalAuthCandidate) []provisioning.Pr
 	return out
 }
 
-func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
+type postgresRuntime struct {
+	pool        *pgxpool.Pool
+	store       *postgres.Store
+	repo        *pgProvisioningAdapter
+	auth        *provisioning.Authenticator
+	opaqueStore *postgres.OpaqueRequestStore
+	bgeClient   *neural.BGEM3Client
+	nliClient   *neural.DeBERTaNLIClient
+	gov         *governor.PowerGovernor
+	l1Graph     *cachel1.CognitiveGraph
+	capSvc      *capture.Service
+	retSvc      *retrieval.Service
+	ctxSvc      *contextbuilder.Service
+	fbSvc       *feedback.Service
+	conflictSvc *conflicts.Service
+	consSvc     *consolidation.Service
+	mcpSrv      *mcp.Server
+}
+
+func openPostgresRuntime(ctx context.Context, dsn string) (*postgresRuntime, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
+		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	defer pool.Close()
-
 	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("ping postgres: %w", err)
+		pool.Close()
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
 	store, err := postgres.NewStore(pool)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 
 	repo := newPostgresAdapter(pgStoreWrapper{ProvisioningStore: store.Provisioning()})
@@ -333,62 +355,112 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 
 	capSvc, err := capture.NewService(store, audit, pgCaptureAccess{r: taskPerms}, pgCaptureOpaque{o: opaqueStore}, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 	capSvc.SetGraphNotifier(l1Graph)
 
 	retSvc, err := retrieval.NewService(store, audit, pgRetrievalAccess{r: taskPerms}, pgOpaqueStatus{o: opaqueStore}, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 	retSvc.SetHybridDeps(store.Search(), bgeClient, l1Graph)
 	retSvc.WithReranker(rerankerClient, profile)
 
 	ctxSvc, err := contextbuilder.NewService(retSvc, audit, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 
 	fbSvc, err := feedback.NewService(store, audit, pgFeedbackAccess{r: taskPerms}, pgFeedbackOpaque{o: opaqueStore}, capSvc, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 	fbSvc.SetGraphNotifier(l1Graph)
 
 	conflictSvc, err := conflicts.NewService(store, store.Conflicts(), audit, pgIdentityTaskReader{r: taskPerms}, l1Graph, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 
 	consSvc, err := consolidation.NewService(store, store.Consolidation(), slmClient, nliClient, audit, l1Graph, gov, nil)
 	if err != nil {
-		return err
+		pool.Close()
+		return nil, err
 	}
 
+	mcpSrv, err := mcp.NewServer(mcp.Dependencies{
+		Authenticator: auth,
+		Capture:       capSvc,
+		Retrieval:     retSvc,
+		Context:       ctxSvc,
+		Feedback:      fbSvc,
+		Governor:      gov,
+	})
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	return &postgresRuntime{
+		pool:        pool,
+		store:       store,
+		repo:        repo,
+		auth:        auth,
+		opaqueStore: opaqueStore,
+		bgeClient:   bgeClient,
+		nliClient:   nliClient,
+		gov:         gov,
+		l1Graph:     l1Graph,
+		capSvc:      capSvc,
+		retSvc:      retSvc,
+		ctxSvc:      ctxSvc,
+		fbSvc:       fbSvc,
+		conflictSvc: conflictSvc,
+		consSvc:     consSvc,
+		mcpSrv:      mcpSrv,
+	}, nil
+}
+
+func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
+	return servePostgresServerWithMCP(ctx, dsn, listenAddr, "")
+}
+
+func servePostgresServerWithMCP(ctx context.Context, dsn, listenAddr, mcpListenAddr string) error {
+	rt, err := openPostgresRuntime(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer rt.pool.Close()
+
 	worker, err := requests.NewWorker(
-		pgWorkerQueue{o: opaqueStore},
-		pgPrincipalResolver{repo: repo},
-		&requests.ServiceExecutor{Capture: capSvc, Feedback: fbSvc},
+		pgWorkerQueue{o: rt.opaqueStore},
+		pgPrincipalResolver{repo: rt.repo},
+		&requests.ServiceExecutor{Capture: rt.capSvc, Feedback: rt.fbSvc},
 		requests.Config{},
 	)
 	if err != nil {
 		return err
 	}
 
-	embWorker := jobs.NewEmbeddingWorker(store.JobQueue(), store.Search(), store.Embeddings(), bgeClient, l1Graph, jobs.EmbeddingWorkerConfig{}, nil).
-		WithNLI(store, store.SemanticNeighbors(), nliClient)
+	embWorker := jobs.NewEmbeddingWorker(rt.store.JobQueue(), rt.store.Search(), rt.store.Embeddings(), rt.bgeClient, rt.l1Graph, jobs.EmbeddingWorkerConfig{}, nil).
+		WithNLI(rt.store, rt.store.SemanticNeighbors(), rt.nliClient)
 
 	handler, _, err := rest.NewRouter(rest.RouterDeps{
-		Auth:          auth,
-		Capture:       capSvc,
-		Retrieval:     retSvc,
-		Context:       ctxSvc,
-		Feedback:      fbSvc,
-		Conflicts:     conflictSvc,
-		Consolidation: consSvc,
-		Governor:      gov,
-		DB:            pool,
-		L1Stats:       l1Graph,
+		Auth:          rt.auth,
+		Capture:       rt.capSvc,
+		Retrieval:     rt.retSvc,
+		Context:       rt.ctxSvc,
+		Feedback:      rt.fbSvc,
+		Conflicts:     rt.conflictSvc,
+		Consolidation: rt.consSvc,
+		Governor:      rt.gov,
+		DB:            rt.pool,
+		L1Stats:       rt.l1Graph,
 		Version:       cli.Version,
 	})
 	if err != nil {
@@ -410,7 +482,7 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 	remDone := make(chan struct{})
 	go func() {
 		defer close(remDone)
-		runIdleREMScheduler(workerCtx, gov, store, consSvc, defaultIdleREMTickInterval)
+		runIdleREMScheduler(workerCtx, rt.gov, rt.store, rt.consSvc, defaultIdleREMTickInterval)
 	}()
 
 	srv := &http.Server{
@@ -419,6 +491,68 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	var mcpHTTP *http.Server
+	if mcpAddr := strings.TrimSpace(mcpListenAddr); mcpAddr != "" && !strings.EqualFold(mcpAddr, "disabled") {
+		mcpHTTP = &http.Server{
+			Addr:              mcpAddr,
+			Handler:           rt.mcpSrv.HTTPHandler(),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+	}
+
+	errCh := make(chan error, 2)
+	go func() {
+		if lErr := srv.ListenAndServe(); lErr != nil && !errors.Is(lErr, http.ErrServerClosed) {
+			errCh <- lErr
+		}
+	}()
+	if mcpHTTP != nil {
+		go func() {
+			if lErr := mcpHTTP.ListenAndServe(); lErr != nil && !errors.Is(lErr, http.ErrServerClosed) {
+				errCh <- lErr
+			}
+		}()
+	}
+
+	shutdownAll := func() {
+		shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelShut()
+		_ = srv.Shutdown(shutCtx)
+		if mcpHTTP != nil {
+			_ = mcpHTTP.Shutdown(shutCtx)
+		}
+		cancelWorker()
+		<-workerDone
+		<-embDone
+		<-remDone
+	}
+
+	select {
+	case sErr := <-errCh:
+		shutdownAll()
+		return sErr
+	case <-ctx.Done():
+		shutdownAll()
+		return nil
+	}
+}
+
+func runPostgresMCP(ctx context.Context, opts cli.MCPServeOptions) error {
+	rt, err := openPostgresRuntime(ctx, opts.DSN)
+	if err != nil {
+		return err
+	}
+	defer rt.pool.Close()
+
+	if opts.Transport == "stdio" {
+		return rt.mcpSrv.ServeStdio(ctx, opts.Stdin, opts.Stdout, opts.APIKey)
+	}
+
+	srv := &http.Server{
+		Addr:              opts.ListenAddr,
+		Handler:           rt.mcpSrv.HTTPHandler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	errCh := make(chan error, 1)
 	go func() {
 		if lErr := srv.ListenAndServe(); lErr != nil && !errors.Is(lErr, http.ErrServerClosed) {
@@ -429,19 +563,11 @@ func servePostgresServer(ctx context.Context, dsn, listenAddr string) error {
 
 	select {
 	case sErr := <-errCh:
-		cancelWorker()
-		<-workerDone
-		<-embDone
-		<-remDone
 		return sErr
 	case <-ctx.Done():
 		shutCtx, cancelShut := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancelShut()
 		_ = srv.Shutdown(shutCtx)
-		cancelWorker()
-		<-workerDone
-		<-embDone
-		<-remDone
 		return nil
 	}
 }
