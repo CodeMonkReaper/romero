@@ -867,6 +867,7 @@ func buildNeuralAndGovernorFromResolved(cfg cli.RuntimeNeuralConfig) (
 	slmClient := neural.NewQwenSLMClient(neural.SLMConfig{
 		BaseURL:   cfg.SLMURL,
 		ModelName: cfg.SLMModel,
+		Protocol:  cfg.SLMProtocol,
 		Enabled:   cfg.SLMURL != "",
 	})
 

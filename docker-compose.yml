@@ -79,6 +79,41 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # Motor 2: Detector NLI (mDeBERTa-v3 en CPU por defecto para preservar VRAM P18)
+  romero-nli:
+    build:
+      context: ./services/nli
+    container_name: romero-nli
+    profiles: ["balanced", "ultra"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      NLI_MODEL_ID: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+      NLI_DEVICE: ${ROMERO_NLI_DEVICE:-cpu}
+      HF_HOME: /data
+    volumes:
+      - romero_hf_cache:/data
+
+  # Motor 3: SLM de Sueño REM (Ollama Qwen 2.5 3B con descarga instantánea keep_alive=0)
+  romero-slm:
+    image: ollama/ollama:latest
+    container_name: romero-slm
+    profiles: ["ultra"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - romero_ollama_cache:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 volumes:
   romero_pgdata:
   romero_hf_cache:
+  romero_ollama_cache:

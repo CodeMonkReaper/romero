@@ -18,12 +18,18 @@ import (
 const (
 	defaultSLMModel   = "Qwen/Qwen2.5-3B-Instruct"
 	defaultSLMTimeout = 15 * time.Second
+
+	// SLMProtocolCustom uses the /consolidate and /unload HTTP contract.
+	SLMProtocolCustom = "custom"
+	// SLMProtocolOllama uses Ollama's native /api/generate contract with keep_alive=0 unload.
+	SLMProtocolOllama = "ollama"
 )
 
 // SLMConfig configures the persistent HTTP client for REM sleep SLM distillation.
 type SLMConfig struct {
 	BaseURL   string
 	ModelName string
+	Protocol  string
 	Timeout   time.Duration
 	Enabled   bool
 }
@@ -32,6 +38,7 @@ type SLMConfig struct {
 type QwenSLMClient struct {
 	baseURL    string
 	modelName  string
+	protocol   string
 	enabled    bool
 	httpClient *http.Client
 }
@@ -42,6 +49,10 @@ func NewQwenSLMClient(cfg SLMConfig) *QwenSLMClient {
 	if modelName == "" {
 		modelName = defaultSLMModel
 	}
+	protocol := strings.ToLower(strings.TrimSpace(cfg.Protocol))
+	if protocol != SLMProtocolOllama {
+		protocol = SLMProtocolCustom
+	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = defaultSLMTimeout
@@ -49,6 +60,7 @@ func NewQwenSLMClient(cfg SLMConfig) *QwenSLMClient {
 	return &QwenSLMClient{
 		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
 		modelName:  modelName,
+		protocol:   protocol,
 		enabled:    cfg.Enabled,
 		httpClient: newNeuralHTTPClient(timeout, 16, 8),
 	}
@@ -81,6 +93,10 @@ func (c *QwenSLMClient) DistillCluster(ctx context.Context, episodes []memory.Me
 			Entities: ep.Entities,
 		}
 	}
+	if c.protocol == SLMProtocolOllama {
+		return c.distillViaOllama(ctx, wireEps)
+	}
+
 	payload, err := json.Marshal(struct {
 		Model    string        `json:"model"`
 		Episodes []wireEpisode `json:"episodes"`
@@ -92,35 +108,125 @@ func (c *QwenSLMClient) DistillCluster(ctx context.Context, episodes []memory.Me
 		return memory.DistilledMemoryDraft{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/consolidate", bytes.NewReader(payload))
+	raw, err := c.postJSON(ctx, "/consolidate", payload)
 	if err != nil {
 		return memory.DistilledMemoryDraft{}, err
+	}
+
+	var body wireSLMDraft
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: decode slm response: %v", ErrProviderUnavailable, err)
+	}
+	return toDistilledDraft(body), nil
+}
+
+func (c *QwenSLMClient) distillViaOllama(ctx context.Context, episodes any) (memory.DistilledMemoryDraft, error) {
+	epJSON, err := json.Marshal(episodes)
+	if err != nil {
+		return memory.DistilledMemoryDraft{}, err
+	}
+	prompt := "Distill these episodic memories into a single JSON object with keys memory_type (procedural or semantic), topic_key, summary (max 600 chars), content, tags (string array), entities (string array). Episodes: " + string(epJSON)
+
+	payload, err := json.Marshal(struct {
+		Model     string `json:"model"`
+		Prompt    string `json:"prompt"`
+		Format    string `json:"format"`
+		Stream    bool   `json:"stream"`
+		KeepAlive string `json:"keep_alive"`
+	}{
+		Model:     c.modelName,
+		Prompt:    prompt,
+		Format:    "json",
+		Stream:    false,
+		KeepAlive: "30s",
+	})
+	if err != nil {
+		return memory.DistilledMemoryDraft{}, err
+	}
+
+	raw, err := c.postJSON(ctx, "/api/generate", payload)
+	if err != nil {
+		return memory.DistilledMemoryDraft{}, err
+	}
+
+	var genResp struct {
+		Response string `json:"response"`
+	}
+	if err := json.Unmarshal(raw, &genResp); err != nil {
+		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: decode ollama response: %v", ErrProviderUnavailable, err)
+	}
+	var body wireSLMDraft
+	if err := json.Unmarshal([]byte(genResp.Response), &body); err != nil {
+		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: decode ollama draft json: %v", ErrProviderUnavailable, err)
+	}
+	return toDistilledDraft(body), nil
+}
+
+func (c *QwenSLMClient) UnloadVRAM(ctx context.Context) error {
+	if !c.enabled || c.baseURL == "" {
+		return nil
+	}
+	var path string
+	var payload []byte
+	var err error
+	if c.protocol == SLMProtocolOllama {
+		path = "/api/generate"
+		payload, err = json.Marshal(struct {
+			Model     string `json:"model"`
+			KeepAlive int    `json:"keep_alive"`
+			Stream    bool   `json:"stream"`
+		}{
+			Model:     c.modelName,
+			KeepAlive: 0,
+			Stream:    false,
+		})
+	} else {
+		path = "/unload"
+		payload, err = json.Marshal(struct {
+			Model string `json:"model"`
+		}{Model: c.modelName})
+	}
+	if err != nil {
+		return err
+	}
+	_, err = c.postJSON(ctx, path, payload)
+	return err
+}
+
+func (c *QwenSLMClient) postJSON(ctx context.Context, path string, payload []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
+		return nil, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
+		return nil, fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
 	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%w: read slm response: %v", ErrProviderUnavailable, err)
+	}
+	return raw, nil
+}
 
-	var body struct {
-		MemoryType string   `json:"memory_type"`
-		TopicKey   string   `json:"topic_key"`
-		Summary    string   `json:"summary"`
-		Content    string   `json:"content"`
-		Tags       []string `json:"tags"`
-		Entities   []string `json:"entities"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return memory.DistilledMemoryDraft{}, fmt.Errorf("%w: decode slm response: %v", ErrProviderUnavailable, err)
-	}
+type wireSLMDraft struct {
+	MemoryType string   `json:"memory_type"`
+	TopicKey   string   `json:"topic_key"`
+	Summary    string   `json:"summary"`
+	Content    string   `json:"content"`
+	Tags       []string `json:"tags"`
+	Entities   []string `json:"entities"`
+}
 
+func toDistilledDraft(body wireSLMDraft) memory.DistilledMemoryDraft {
 	memType := memory.MemoryType(strings.TrimSpace(body.MemoryType))
 	if memType != memory.TypeProcedural && memType != memory.TypeSemantic {
 		memType = memory.TypeProcedural
@@ -136,35 +242,7 @@ func (c *QwenSLMClient) DistillCluster(ctx context.Context, episodes []memory.Me
 		Content:    strings.TrimSpace(body.Content),
 		Tags:       body.Tags,
 		Entities:   body.Entities,
-	}, nil
-}
-
-func (c *QwenSLMClient) UnloadVRAM(ctx context.Context) error {
-	if !c.enabled || c.baseURL == "" {
-		return nil
 	}
-	payload, err := json.Marshal(struct {
-		Model string `json:"model"`
-	}{Model: c.modelName})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/unload", bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%w: unload status %d", ErrProviderUnavailable, resp.StatusCode)
-	}
-	return nil
 }
 
 // DeterministicSLMConsolidator provides a deterministic CPU reference for romero eval.
