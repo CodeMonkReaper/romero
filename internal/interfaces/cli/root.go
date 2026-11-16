@@ -68,7 +68,7 @@ func newServeCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 			}
 			addr := resolveListenAddr(listenAddr, gf.configPath)
 			mcpAddr := resolveMCPListenAddr(mcpListenAddr, gf.configPath)
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(WithConfigPath(cmd.Context(), gf.configPath), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if deps.ServeWithMCP != nil {
 				return deps.ServeWithMCP(ctx, dsn, addr, mcpAddr)
@@ -111,7 +111,7 @@ func newMCPCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 			if mode == "sse" {
 				addr = resolveMCPListenAddr(listenAddr, gf.configPath)
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(WithConfigPath(cmd.Context(), gf.configPath), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return deps.MCP(ctx, MCPServeOptions{
 				DSN:        dsn,
@@ -566,7 +566,7 @@ func newConsolidateCmd(gf *globalFlags, deps Dependencies) *cobra.Command {
 				}
 				projectID = &parsed
 			}
-			res, err := deps.Consolidate(cmd.Context(), dsn, rawKey, projectID, dryRun)
+			res, err := deps.Consolidate(WithConfigPath(cmd.Context(), gf.configPath), dsn, rawKey, projectID, dryRun)
 			if err != nil {
 				return err
 			}
