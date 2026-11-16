@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -208,6 +209,9 @@ func TestQwenSLMClientOllamaProtocol(t *testing.T) {
 		Protocol:  neural.SLMProtocolOllama,
 		Enabled:   true,
 	})
+	if client.Timeout() != 120*time.Second {
+		t.Fatalf("default SLM timeout = %v, want 120s", client.Timeout())
+	}
 	draft, err := client.DistillCluster(ctx, []memory.Memory{{ID: uuid.New(), Summary: "ep1", Content: "ep1"}})
 	if err != nil {
 		t.Fatalf("Ollama DistillCluster failed: %v", err)

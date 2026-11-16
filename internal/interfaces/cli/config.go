@@ -55,6 +55,7 @@ type RuntimeNeuralConfig struct {
 	SLMURL       string
 	SLMModel     string
 	SLMProtocol  string
+	SLMTimeout   time.Duration
 }
 
 type configPathCtxKey struct{}
@@ -113,7 +114,17 @@ func ResolveRuntimeNeuralConfig(configPath string) RuntimeNeuralConfig {
 		SLMURL:       normalizeEndpointBase(rawSLM, "/consolidate", "/api/generate"),
 		SLMModel:     strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_SLM_MODEL"), profCfg.SLMREMModel)),
 		SLMProtocol:  slmProtocol,
+		SLMTimeout:   resolveSLMTimeout(os.Getenv("ROMERO_SLM_TIMEOUT")),
 	}
+}
+
+func resolveSLMTimeout(raw string) time.Duration {
+	if trimmed := strings.TrimSpace(raw); trimmed != "" {
+		if d, err := time.ParseDuration(trimmed); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 120 * time.Second
 }
 
 func resolveSLMProtocol(envOverride, rawEndpoint string) string {

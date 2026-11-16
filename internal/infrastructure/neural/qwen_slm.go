@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultSLMModel   = "Qwen/Qwen2.5-3B-Instruct"
-	defaultSLMTimeout = 15 * time.Second
+	defaultSLMTimeout = 120 * time.Second
 
 	// SLMProtocolCustom uses the /consolidate and /unload HTTP contract.
 	SLMProtocolCustom = "custom"
@@ -64,6 +64,11 @@ func NewQwenSLMClient(cfg SLMConfig) *QwenSLMClient {
 		enabled:    cfg.Enabled,
 		httpClient: newNeuralHTTPClient(timeout, 16, 8),
 	}
+}
+
+// Timeout returns the configured HTTP request timeout for SLM requests.
+func (c *QwenSLMClient) Timeout() time.Duration {
+	return c.httpClient.Timeout
 }
 
 func (c *QwenSLMClient) DistillCluster(ctx context.Context, episodes []memory.Memory) (memory.DistilledMemoryDraft, error) {
@@ -125,7 +130,7 @@ func (c *QwenSLMClient) distillViaOllama(ctx context.Context, episodes any) (mem
 	if err != nil {
 		return memory.DistilledMemoryDraft{}, err
 	}
-	prompt := "Distill these episodic memories into a single JSON object with keys memory_type (procedural or semantic), topic_key, summary (max 600 chars), content, tags (string array), entities (string array). Episodes: " + string(epJSON)
+	prompt := "Distill all provided episodic memories into a single canonical JSON object with keys memory_type (procedural or semantic), topic_key, summary (max 600 chars), content, tags (string array), entities (string array). Ensure summary and content accurately preserve and entail every distinct fact, command, and requirement across ALL episodes so none are omitted. Episodes: " + string(epJSON)
 
 	payload, err := json.Marshal(struct {
 		Model     string `json:"model"`

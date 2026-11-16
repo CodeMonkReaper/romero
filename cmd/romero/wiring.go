@@ -868,6 +868,7 @@ func buildNeuralAndGovernorFromResolved(cfg cli.RuntimeNeuralConfig) (
 		BaseURL:   cfg.SLMURL,
 		ModelName: cfg.SLMModel,
 		Protocol:  cfg.SLMProtocol,
+		Timeout:   cfg.SLMTimeout,
 		Enabled:   cfg.SLMURL != "",
 	})
 
