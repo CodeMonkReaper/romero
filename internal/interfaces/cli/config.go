@@ -54,6 +54,7 @@ type RuntimeNeuralConfig struct {
 	NLIURL       string
 	SLMURL       string
 	SLMModel     string
+	SLMProtocol  string
 }
 
 type configPathCtxKey struct{}
@@ -101,14 +102,32 @@ func ResolveRuntimeNeuralConfig(configPath string) RuntimeNeuralConfig {
 	}
 
 	profCfg := parsed.Profiles[profile]
+	rawSLM := firstNonEmpty(os.Getenv("ROMERO_SLM_URL"), profCfg.SLMREMEndpoint)
+	slmProtocol := resolveSLMProtocol(os.Getenv("ROMERO_SLM_PROTOCOL"), rawSLM)
+
 	return RuntimeNeuralConfig{
 		Profile:      profile,
 		EmbeddingURL: normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_BGE_M3_URL"), profCfg.EmbeddingEndpoint), "/embed", "/api/embeddings"),
 		RerankerURL:  normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_RERANKER_URL"), profCfg.RerankerEndpoint), "/rerank"),
 		NLIURL:       normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_NLI_URL"), profCfg.NLIEndpoint), "/nli"),
-		SLMURL:       normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_SLM_URL"), profCfg.SLMREMEndpoint), "/consolidate", "/api/generate"),
+		SLMURL:       normalizeEndpointBase(rawSLM, "/consolidate", "/api/generate"),
 		SLMModel:     strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_SLM_MODEL"), profCfg.SLMREMModel)),
+		SLMProtocol:  slmProtocol,
 	}
+}
+
+func resolveSLMProtocol(envOverride, rawEndpoint string) string {
+	switch strings.ToLower(strings.TrimSpace(envOverride)) {
+	case "ollama":
+		return "ollama"
+	case "custom":
+		return "custom"
+	}
+	trimmed := strings.TrimRight(strings.TrimSpace(rawEndpoint), "/")
+	if strings.HasSuffix(trimmed, "/api/generate") {
+		return "ollama"
+	}
+	return "custom"
 }
 
 func firstNonEmpty(values ...string) string {

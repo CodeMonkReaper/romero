@@ -165,3 +165,57 @@ func TestQwenSLMClientAndDeterministic(t *testing.T) {
 		t.Fatalf("deterministic UnloadVRAM failed: err=%v calls=%d", err, det.UnloadCalls.Load())
 	}
 }
+
+func TestQwenSLMClientOllamaProtocol(t *testing.T) {
+	ctx := context.Background()
+	var sawDistill, sawUnload bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/generate" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if ka, ok := req["keep_alive"].(float64); ok && ka == 0 {
+			sawUnload = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"done": true})
+			return
+		}
+		if req["format"] != "json" || req["stream"] != false {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		sawDistill = true
+		inner, _ := json.Marshal(map[string]any{
+			"memory_type": "semantic",
+			"topic_key":   "gpu.ollama",
+			"summary":     "Ollama unloads Qwen2.5-3B immediately with keep_alive=0",
+			"content":     "Distilled knowledge from episodic memories.",
+			"tags":        []string{"ollama", "rem"},
+			"entities":    []string{"Qwen2.5-3B"},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"response": string(inner)})
+	}))
+	defer srv.Close()
+
+	client := neural.NewQwenSLMClient(neural.SLMConfig{
+		BaseURL:   srv.URL,
+		ModelName: "qwen2.5:3b-instruct-q4_K_M",
+		Protocol:  neural.SLMProtocolOllama,
+		Enabled:   true,
+	})
+	draft, err := client.DistillCluster(ctx, []memory.Memory{{ID: uuid.New(), Summary: "ep1", Content: "ep1"}})
+	if err != nil {
+		t.Fatalf("Ollama DistillCluster failed: %v", err)
+	}
+	if !sawDistill || draft.MemoryType != memory.TypeSemantic || draft.TopicKey != "gpu.ollama" {
+		t.Fatalf("unexpected Ollama draft: sawDistill=%v draft=%+v", sawDistill, draft)
+	}
+	if err := client.UnloadVRAM(ctx); err != nil || !sawUnload {
+		t.Fatalf("Ollama UnloadVRAM failed: err=%v sawUnload=%v", err, sawUnload)
+	}
+}

@@ -94,6 +94,9 @@ slm_rem_model = "qwen2.5:3b-instruct-q4_K_M"
 	if got.SLMModel != "qwen2.5:3b-instruct-q4_K_M" {
 		t.Fatalf("SLMModel = %q, want qwen2.5:3b-instruct-q4_K_M", got.SLMModel)
 	}
+	if got.SLMProtocol != "ollama" {
+		t.Fatalf("SLMProtocol = %q, want ollama", got.SLMProtocol)
+	}
 
 	// Environment variables must override TOML values.
 	t.Setenv("ROMERO_PROFILE", "balanced")
@@ -125,8 +128,12 @@ slm_rem_endpoint = "http://127.0.0.1:9000/consolidate"
 	t.Setenv("ROMERO_PROFILE", "")
 	t.Setenv("ROMERO_BGE_M3_URL", "")
 	liteCfg := ResolveRuntimeNeuralConfig(runtimeTOML)
-	if liteCfg.Profile != "lite" || liteCfg.EmbeddingURL != "http://127.0.0.1:11434" || liteCfg.SLMURL != "http://127.0.0.1:9000" {
+	if liteCfg.Profile != "lite" || liteCfg.EmbeddingURL != "http://127.0.0.1:11434" || liteCfg.SLMURL != "http://127.0.0.1:9000" || liteCfg.SLMProtocol != "custom" {
 		t.Fatalf("runtime/lite fallback mismatch: %+v", liteCfg)
+	}
+	t.Setenv("ROMERO_SLM_PROTOCOL", "ollama")
+	if protoCfg := ResolveRuntimeNeuralConfig(runtimeTOML); protoCfg.SLMProtocol != "ollama" {
+		t.Fatalf("ROMERO_SLM_PROTOCOL override = %q, want ollama", protoCfg.SLMProtocol)
 	}
 	t.Setenv("ROMERO_BGE_M3_URL", "http://127.0.0.1:8081/")
 	bareCfg := ResolveRuntimeNeuralConfig(runtimeTOML)

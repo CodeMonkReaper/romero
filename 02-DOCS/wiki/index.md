@@ -36,6 +36,7 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 | Spec — Phase 02 Hybrid Retrieval (Recuperación Híbrida, Grafo Causal y Empaquetado de Contexto) | `02-DOCS/wiki/sdd/specs/phase-02-hybrid-retrieval.md` |
 | Spec — Phase 03 NLI, Arbitraje de Conflictos, Gobernador de Potencia y Consolidación en Sueño REM | `02-DOCS/wiki/sdd/specs/phase-03-nli-governor-rem.md` |
 | Spec — Phase 04 Servidor MCP de Memoria Cognitiva y Librería Cliente Exportable para Gandalf Wizard | `02-DOCS/wiki/sdd/specs/phase-04-mcp-server.md` |
+| Spec — Sidecars NLI (:8083) y REM SLM (Qwen 2.5 3B / Ollama) | `02-DOCS/wiki/sdd/specs/nli-slm-sidecars.md` |
 
 ## Planes Técnicos (`sdd/plans/`)
 
