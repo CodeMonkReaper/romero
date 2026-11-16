@@ -95,26 +95,31 @@ func (c *RerankerClient) Rerank(ctx context.Context, query string, candidates []
 		return nil, fmt.Errorf("%w: status %d", ErrProviderUnavailable, resp.StatusCode)
 	}
 
-	var body struct {
-		Results []struct {
-			Index int     `json:"index"`
-			Score float32 `json:"score"`
-		} `json:"results"`
-		Scores []float32 `json:"scores"`
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%w: read rerank response: %v", ErrProviderUnavailable, err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.HasPrefix(trimmed, []byte("[")) {
+		var items []rerankResultItem
+		if err := json.Unmarshal(trimmed, &items); err != nil {
+			return nil, fmt.Errorf("%w: decode rerank response: %v", ErrProviderUnavailable, err)
+		}
+		return mapRerankItems(items, candidates), nil
+	}
+
+	var body struct {
+		Results []rerankResultItem `json:"results"`
+		Scores  []float32          `json:"scores"`
+	}
+	if err := json.Unmarshal(trimmed, &body); err != nil {
 		return nil, fmt.Errorf("%w: decode rerank response: %v", ErrProviderUnavailable, err)
 	}
 
-	out := make(map[uuid.UUID]float32, len(candidates))
 	if len(body.Results) > 0 {
-		for _, r := range body.Results {
-			if r.Index >= 0 && r.Index < len(candidates) {
-				out[candidates[r.Index].MemoryID] = r.Score
-			}
-		}
-		return out, nil
+		return mapRerankItems(body.Results, candidates), nil
 	}
+	out := make(map[uuid.UUID]float32, len(candidates))
 	if len(body.Scores) != len(candidates) {
 		return nil, fmt.Errorf("%w: score count mismatch %d != %d", ErrProviderUnavailable, len(body.Scores), len(candidates))
 	}
@@ -122,6 +127,21 @@ func (c *RerankerClient) Rerank(ctx context.Context, query string, candidates []
 		out[cand.MemoryID] = body.Scores[i]
 	}
 	return out, nil
+}
+
+type rerankResultItem struct {
+	Index int     `json:"index"`
+	Score float32 `json:"score"`
+}
+
+func mapRerankItems(items []rerankResultItem, candidates []memory.RerankCandidate) map[uuid.UUID]float32 {
+	out := make(map[uuid.UUID]float32, len(candidates))
+	for _, r := range items {
+		if r.Index >= 0 && r.Index < len(candidates) {
+			out[candidates[r.Index].MemoryID] = r.Score
+		}
+	}
+	return out
 }
 
 // DeterministicReranker provides a deterministic CPU reference implementation for romero eval.
