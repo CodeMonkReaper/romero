@@ -218,6 +218,9 @@ func TestConsolidate_AuthorizationAndSuccessAndNLIRollback(t *testing.T) {
 	if l1.upserts != 1 || l1.statuses != 3 || l1.rels != 1 {
 		t.Fatalf("expected L1 sync, got %+v", l1)
 	}
+	if slm.unloads.Load() != 1 {
+		t.Fatalf("expected UnloadVRAM called once after normal REM consolidation, got %d", slm.unloads.Load())
+	}
 
 	// If NLI cross-check detects contradiction against verified, draft is discarded and episodes stay active.
 	reg2 := newFakeReg()

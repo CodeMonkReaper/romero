@@ -158,6 +158,11 @@ func (s *Service) runConsolidate(
 	if cmd.DryRun || len(clusters) == 0 || s.slm == nil || s.nli == nil {
 		return nil
 	}
+	defer func() {
+		unloadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.slm.UnloadVRAM(unloadCtx)
+	}()
 
 	verifiedMems, err := s.repo.ListActiveVerifiedByProject(remCtx, auth.TenantID, cmd.ProjectID, now)
 	if err != nil {

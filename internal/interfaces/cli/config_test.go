@@ -71,7 +71,7 @@ slm_rem_model = "qwen2.5:3b-instruct-q4_K_M"
 		t.Fatalf("write toml: %v", err)
 	}
 
-	for _, k := range []string{"ROMERO_PROFILE", "ROMERO_BGE_M3_URL", "ROMERO_RERANKER_URL", "ROMERO_NLI_URL", "ROMERO_SLM_URL", "ROMERO_SLM_MODEL"} {
+	for _, k := range []string{"ROMERO_PROFILE", "ROMERO_BGE_M3_URL", "ROMERO_RERANKER_URL", "ROMERO_NLI_URL", "ROMERO_SLM_URL", "ROMERO_SLM_MODEL", "ROMERO_SLM_TIMEOUT"} {
 		t.Setenv(k, "")
 	}
 
@@ -97,6 +97,20 @@ slm_rem_model = "qwen2.5:3b-instruct-q4_K_M"
 	if got.SLMProtocol != "ollama" {
 		t.Fatalf("SLMProtocol = %q, want ollama", got.SLMProtocol)
 	}
+	if got.SLMTimeout != 120*time.Second {
+		t.Fatalf("SLMTimeout = %v, want 120s", got.SLMTimeout)
+	}
+	t.Setenv("ROMERO_SLM_TIMEOUT", "180s")
+	if toCfg := ResolveRuntimeNeuralConfig(tomlPath); toCfg.SLMTimeout != 180*time.Second {
+		t.Fatalf("ROMERO_SLM_TIMEOUT override = %v, want 180s", toCfg.SLMTimeout)
+	}
+	for _, invalid := range []string{"bogus", "0s", "-5s"} {
+		t.Setenv("ROMERO_SLM_TIMEOUT", invalid)
+		if fb := ResolveRuntimeNeuralConfig(tomlPath); fb.SLMTimeout != 120*time.Second {
+			t.Fatalf("ROMERO_SLM_TIMEOUT=%q fallback = %v, want 120s", invalid, fb.SLMTimeout)
+		}
+	}
+	t.Setenv("ROMERO_SLM_TIMEOUT", "")
 
 	// Environment variables must override TOML values.
 	t.Setenv("ROMERO_PROFILE", "balanced")
