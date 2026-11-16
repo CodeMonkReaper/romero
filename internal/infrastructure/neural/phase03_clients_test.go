@@ -59,6 +59,35 @@ func TestRerankerClientAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestRerankerClientTEIArrayResponse(t *testing.T) {
+	ctx := context.Background()
+	id1, id2 := uuid.New(), uuid.New()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rerank" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"index": 1, "score": 0.9394706},
+			{"index": 0, "score": 0.00001631454},
+		})
+	}))
+	defer srv.Close()
+
+	client := neural.NewRerankerClient(neural.RerankerConfig{BaseURL: srv.URL, Enabled: true})
+	scores, err := client.Rerank(ctx, "GPU ultra profile", []memory.RerankCandidate{
+		{MemoryID: id1, Text: "unrelated database text"},
+		{MemoryID: id2, Text: "ROMERO cognitive memory GPU ultra profile"},
+	})
+	if err != nil {
+		t.Fatalf("Rerank TEI array response failed: %v", err)
+	}
+	if scores[id2] < 0.93 || scores[id1] > 0.001 {
+		t.Fatalf("unexpected TEI array scores: %+v", scores)
+	}
+}
+
 func TestDeBERTaNLIClientAndDeterministic(t *testing.T) {
 	ctx := context.Background()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

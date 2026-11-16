@@ -43,7 +43,7 @@ services:
 
   # Motor 1A: Embeddings BGE-M3 en GPU (Perfiles Balanced y Ultra)
   romero-embeddings:
-    image: ghcr.io/huggingface/text-embeddings-inference:86-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:89-1.9
     container_name: romero-embeddings
     profiles: ["balanced", "ultra"]
     restart: unless-stopped
@@ -62,7 +62,7 @@ services:
 
   # Motor 1B: Cross-Encoder Reranker en GPU (Perfil Ultra)
   romero-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:86-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:89-1.9
     container_name: romero-reranker
     profiles: ["ultra"]
     restart: unless-stopped
