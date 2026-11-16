@@ -26,13 +26,109 @@ const defaultConfigPath = "configs/romero.toml"
 
 type tomlFileConfig struct {
 	Server struct {
-		Host       string `toml:"host"`
-		RESTPort   int    `toml:"rest_port"`
-		MCPSSEPort int    `toml:"mcp_sse_port"`
+		Host          string `toml:"host"`
+		RESTPort      int    `toml:"rest_port"`
+		MCPSSEPort    int    `toml:"mcp_sse_port"`
+		ActiveProfile string `toml:"active_profile"`
 	} `toml:"server"`
 	Database struct {
 		DSN string `toml:"dsn"`
 	} `toml:"database"`
+	Runtime struct {
+		ActiveProfile string `toml:"active_profile"`
+	} `toml:"runtime"`
+	Profiles map[string]struct {
+		EmbeddingEndpoint string `toml:"embedding_endpoint"`
+		RerankerEndpoint  string `toml:"reranker_endpoint"`
+		NLIEndpoint       string `toml:"nli_endpoint"`
+		SLMREMEndpoint    string `toml:"slm_rem_endpoint"`
+		SLMREMModel       string `toml:"slm_rem_model"`
+	} `toml:"profiles"`
+}
+
+// RuntimeNeuralConfig holds the resolved cognitive profile and neural service endpoints.
+type RuntimeNeuralConfig struct {
+	Profile      string
+	EmbeddingURL string
+	RerankerURL  string
+	NLIURL       string
+	SLMURL       string
+	SLMModel     string
+}
+
+type configPathCtxKey struct{}
+
+// WithConfigPath attaches an explicit --config path to ctx for runtime wiring.
+func WithConfigPath(ctx context.Context, configPath string) context.Context {
+	if trimmed := strings.TrimSpace(configPath); trimmed != "" {
+		return context.WithValue(ctx, configPathCtxKey{}, trimmed)
+	}
+	return ctx
+}
+
+// ConfigPathFromContext extracts the --config path attached by WithConfigPath, if any.
+func ConfigPathFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(configPathCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ResolveRuntimeNeuralConfig resolves profile and neural endpoints with precedence:
+// environment variables > TOML config ([runtime] / [profiles.<profile>]) > defaults.
+func ResolveRuntimeNeuralConfig(configPath string) RuntimeNeuralConfig {
+	path := strings.TrimSpace(configPath)
+	if path == "" {
+		path = defaultConfigPath
+	}
+
+	var parsed tomlFileConfig
+	if raw, err := os.ReadFile(path); err == nil { // #nosec G304 -- path comes from explicit operator CLI --config flag
+		if uErr := toml.Unmarshal(raw, &parsed); uErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: parse config %q: %v\n", path, uErr)
+		}
+	}
+
+	profile := firstNonEmpty(os.Getenv("ROMERO_PROFILE"), parsed.Server.ActiveProfile, parsed.Runtime.ActiveProfile)
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	switch profile {
+	case "lite", "balanced", "ultra":
+	default:
+		profile = "balanced"
+	}
+
+	profCfg := parsed.Profiles[profile]
+	return RuntimeNeuralConfig{
+		Profile:      profile,
+		EmbeddingURL: normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_BGE_M3_URL"), profCfg.EmbeddingEndpoint), "/embed", "/api/embeddings"),
+		RerankerURL:  normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_RERANKER_URL"), profCfg.RerankerEndpoint), "/rerank"),
+		NLIURL:       normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_NLI_URL"), profCfg.NLIEndpoint), "/nli"),
+		SLMURL:       normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_SLM_URL"), profCfg.SLMREMEndpoint), "/consolidate", "/api/generate"),
+		SLMModel:     strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_SLM_MODEL"), profCfg.SLMREMModel)),
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func normalizeEndpointBase(raw string, suffixes ...string) string {
+	cleaned := strings.TrimRight(strings.TrimSpace(raw), "/")
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(cleaned, suffix) {
+			cleaned = strings.TrimRight(strings.TrimSuffix(cleaned, suffix), "/")
+			break
+		}
+	}
+	return cleaned
 }
 
 // MCPServeOptions configures standalone `romero mcp` execution.

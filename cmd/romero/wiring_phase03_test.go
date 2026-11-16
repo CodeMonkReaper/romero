@@ -45,6 +45,20 @@ func TestBuildNeuralAndGovernorProfiles(t *testing.T) {
 	}
 }
 
+func TestBuildNeuralAndGovernorFromConfigFile(t *testing.T) {
+	for _, k := range []string{"ROMERO_PROFILE", "ROMERO_BGE_M3_URL", "ROMERO_RERANKER_URL", "ROMERO_NLI_URL", "ROMERO_SLM_URL", "ROMERO_SLM_MODEL"} {
+		t.Setenv(k, "")
+	}
+	_, _, _, gov, prof := buildNeuralAndGovernorFromConfig("../../configs/romero.toml")
+	if prof != governor.ProfileUltra {
+		t.Fatalf("profile = %s, want ultra", prof)
+	}
+	snap := gov.Status()
+	if !snap.RerankerAvailable || !snap.NLIAvailable || !snap.SLMAvailable {
+		t.Fatalf("expected ultra endpoints from configs/romero.toml to enable capabilities: %+v", snap)
+	}
+}
+
 type fakeREMLister struct {
 	targets []postgres.REMTarget
 	err     error

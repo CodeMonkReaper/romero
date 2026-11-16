@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -345,12 +344,12 @@ func openPostgresRuntime(ctx context.Context, dsn string) (*postgresRuntime, err
 	taskPerms := store.TaskPermissions()
 	opaqueStore := store.OpaqueRequests(60 * time.Second)
 
-	bgeURL := strings.TrimSpace(os.Getenv("ROMERO_BGE_M3_URL"))
+	neuralCfg := cli.ResolveRuntimeNeuralConfig(cli.ConfigPathFromContext(ctx))
 	bgeClient := neural.NewBGEM3Client(neural.BGEM3Config{
-		BaseURL: bgeURL,
-		Enabled: bgeURL != "",
+		BaseURL: neuralCfg.EmbeddingURL,
+		Enabled: neuralCfg.EmbeddingURL != "",
 	})
-	rerankerClient, nliClient, slmClient, gov, profile := buildNeuralAndGovernor()
+	rerankerClient, nliClient, slmClient, gov, profile := buildNeuralAndGovernorFromResolved(neuralCfg)
 	l1Graph := cachel1.NewCognitiveGraph(store.Search())
 
 	capSvc, err := capture.NewService(store, audit, pgCaptureAccess{r: taskPerms}, pgCaptureOpaque{o: opaqueStore}, nil)
@@ -828,37 +827,55 @@ func buildNeuralAndGovernor() (
 	*governor.PowerGovernor,
 	governor.Profile,
 ) {
-	profile := governor.Profile(strings.ToLower(strings.TrimSpace(os.Getenv("ROMERO_PROFILE"))))
+	return buildNeuralAndGovernorFromConfig("")
+}
+
+func buildNeuralAndGovernorFromConfig(configPath string) (
+	*neural.RerankerClient,
+	*neural.DeBERTaNLIClient,
+	*neural.QwenSLMClient,
+	*governor.PowerGovernor,
+	governor.Profile,
+) {
+	return buildNeuralAndGovernorFromResolved(cli.ResolveRuntimeNeuralConfig(configPath))
+}
+
+func buildNeuralAndGovernorFromResolved(cfg cli.RuntimeNeuralConfig) (
+	*neural.RerankerClient,
+	*neural.DeBERTaNLIClient,
+	*neural.QwenSLMClient,
+	*governor.PowerGovernor,
+	governor.Profile,
+) {
+	profile := governor.Profile(cfg.Profile)
 	switch profile {
 	case governor.ProfileLite, governor.ProfileBalanced, governor.ProfileUltra:
 	default:
 		profile = governor.ProfileBalanced
 	}
 
-	rerankerURL := strings.TrimSpace(os.Getenv("ROMERO_RERANKER_URL"))
 	rerankerClient := neural.NewRerankerClient(neural.RerankerConfig{
-		BaseURL: rerankerURL,
-		Enabled: rerankerURL != "" && profile == governor.ProfileUltra,
+		BaseURL: cfg.RerankerURL,
+		Enabled: cfg.RerankerURL != "" && profile == governor.ProfileUltra,
 	})
 
-	nliURL := strings.TrimSpace(os.Getenv("ROMERO_NLI_URL"))
 	nliClient := neural.NewDeBERTaNLIClient(neural.NLIConfig{
-		BaseURL: nliURL,
-		Enabled: nliURL != "",
+		BaseURL: cfg.NLIURL,
+		Enabled: cfg.NLIURL != "",
 	})
 
-	slmURL := strings.TrimSpace(os.Getenv("ROMERO_SLM_URL"))
 	slmClient := neural.NewQwenSLMClient(neural.SLMConfig{
-		BaseURL: slmURL,
-		Enabled: slmURL != "",
+		BaseURL:   cfg.SLMURL,
+		ModelName: cfg.SLMModel,
+		Enabled:   cfg.SLMURL != "",
 	})
 
 	gov := governor.NewPowerGovernor(governor.Config{
 		Profile:           profile,
 		OnUnloadVRAM:      slmClient.UnloadVRAM,
-		RerankerAvailable: rerankerURL != "" && profile == governor.ProfileUltra,
-		NLIAvailable:      nliURL != "",
-		SLMAvailable:      slmURL != "",
+		RerankerAvailable: cfg.RerankerURL != "" && profile == governor.ProfileUltra,
+		NLIAvailable:      cfg.NLIURL != "",
+		SLMAvailable:      cfg.SLMURL != "",
 	})
 	return rerankerClient, nliClient, slmClient, gov, profile
 }
@@ -887,7 +904,7 @@ func runPostgresConsolidation(ctx context.Context, dsn, rawAPIKey string, projec
 		return nil, err
 	}
 
-	_, nliClient, slmClient, gov, _ := buildNeuralAndGovernor()
+	_, nliClient, slmClient, gov, _ := buildNeuralAndGovernorFromConfig(cli.ConfigPathFromContext(ctx))
 	l1Graph := cachel1.NewCognitiveGraph(store.Search())
 	consSvc, err := consolidation.NewService(store, store.Consolidation(), slmClient, nliClient, audit, l1Graph, gov, nil)
 	if err != nil {
