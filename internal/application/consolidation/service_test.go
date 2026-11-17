@@ -46,13 +46,23 @@ func (r *fakeReg) InsertSource(_ context.Context, src provenance.MemorySource) e
 	r.sources = append(r.sources, src)
 	return nil
 }
-func (r *fakeReg) GetMemoryByID(context.Context, uuid.UUID, uuid.UUID) (*memory.Memory, error) {
+func (r *fakeReg) GetMemoryByID(_ context.Context, tenantID, memoryID uuid.UUID) (*memory.Memory, error) {
+	if m, ok := r.mems[memoryID]; ok && m.TenantID == tenantID {
+		cp := m
+		return &cp, nil
+	}
 	return nil, memory.ErrNotFound
 }
 func (r *fakeReg) GetMemoryByIdempotencyKey(context.Context, uuid.UUID, string) (*memory.Memory, error) {
 	return nil, memory.ErrNotFound
 }
-func (r *fakeReg) LockActiveTopicMemory(context.Context, identity.MemoryScopeTarget, string) (*memory.Memory, error) {
+func (r *fakeReg) LockActiveTopicMemory(_ context.Context, scope identity.MemoryScopeTarget, topicKey string) (*memory.Memory, error) {
+	for _, m := range r.mems {
+		if m.TenantID == scope.TenantID && m.Status == memory.StatusActive && m.TopicKey == topicKey {
+			cp := m
+			return &cp, nil
+		}
+	}
 	return nil, memory.ErrNotFound
 }
 func (r *fakeReg) InsertMemory(_ context.Context, m memory.Memory) error {
@@ -448,5 +458,63 @@ func TestConsolidate_EngineUnavailableAndNLIDirection(t *testing.T) {
 	}
 	if nliRec.lastPairs[0].Premise != "DISTILLED_DRAFT_SUMMARY\nDISTILLED_DRAFT_CONTENT" {
 		t.Fatalf("expected distilled draft in Premise, got %q", nliRec.lastPairs[0].Premise)
+	}
+}
+
+func TestConsolidate_TopicKeyCollisionAndLifecycleHooks(t *testing.T) {
+	ctx := context.Background()
+	tenantID, projID := uuid.New(), uuid.New()
+	now := time.Now().UTC()
+	eps, vecs := makeClusterFixtures(tenantID, projID, now)
+	admin := identity.AuthContext{TenantID: tenantID, PrincipalID: uuid.New(), PrincipalType: identity.PrincipalUser, IsAdmin: true}
+
+	reg := newFakeReg()
+	for _, ep := range eps {
+		reg.mems[ep.ID] = ep
+	}
+	existing := memory.Memory{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		ProjectID: &projID,
+		ScopeType: identity.ScopeProjectShared,
+		Status:    memory.StatusActive,
+		TopicKey:  "vault-rotation",
+	}
+	reg.mems[existing.ID] = existing
+
+	repo := &fakeConsolidationRepo{cands: eps, vecs: vecs}
+	nli := &fakeNLI{scores: []memory.NLIScore{{Entailment: 0.90}, {Entailment: 0.90}, {Entailment: 0.90}}}
+	slm := &fakeSLM{draft: memory.DistilledMemoryDraft{
+		MemoryType: memory.TypeProcedural,
+		TopicKey:   "vault-rotation",
+		Summary:    "Vault rotation procedure",
+		Content:    "Consolidated Vault rotation procedure.",
+	}}
+
+	svc, err := consolidation.NewService(&fakeUOW{reg: reg}, repo, slm, nli, reg.audit, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+
+	var beforeCalls, afterCalls int
+	svc.SetREMLifecycleHooks(
+		func(context.Context) error { beforeCalls++; return nil },
+		func(context.Context) error { afterCalls++; return nil },
+	)
+
+	res, err := svc.Consolidate(ctx, admin, consolidation.ConsolidateCommand{ProjectID: &projID})
+	if err != nil {
+		t.Fatalf("Consolidate failed: %v", err)
+	}
+	if res.DistilledCount != 1 || len(res.CreatedMemoryIDs) != 1 {
+		t.Fatalf("expected 1 distilled memory, got %+v", res)
+	}
+	if beforeCalls != 1 || afterCalls != 1 {
+		t.Fatalf("expected lifecycle hooks called once each, got before=%d after=%d", beforeCalls, afterCalls)
+	}
+	created := reg.mems[res.CreatedMemoryIDs[0]]
+	expectedPrefix := "vault-rotation-rem-" + created.ID.String()[:8]
+	if created.TopicKey != expectedPrefix {
+		t.Fatalf("expected disambiguated topic_key %q, got %q", expectedPrefix, created.TopicKey)
 	}
 }

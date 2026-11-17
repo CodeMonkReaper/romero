@@ -38,24 +38,26 @@ type tomlFileConfig struct {
 		ActiveProfile string `toml:"active_profile"`
 	} `toml:"runtime"`
 	Profiles map[string]struct {
-		EmbeddingEndpoint string `toml:"embedding_endpoint"`
-		RerankerEndpoint  string `toml:"reranker_endpoint"`
-		NLIEndpoint       string `toml:"nli_endpoint"`
-		SLMREMEndpoint    string `toml:"slm_rem_endpoint"`
-		SLMREMModel       string `toml:"slm_rem_model"`
+		EmbeddingEndpoint         string `toml:"embedding_endpoint"`
+		RerankerEndpoint          string `toml:"reranker_endpoint"`
+		NLIEndpoint               string `toml:"nli_endpoint"`
+		SLMREMEndpoint            string `toml:"slm_rem_endpoint"`
+		SLMREMModel               string `toml:"slm_rem_model"`
+		REMPauseRerankerContainer string `toml:"rem_pause_reranker_container"`
 	} `toml:"profiles"`
 }
 
 // RuntimeNeuralConfig holds the resolved cognitive profile and neural service endpoints.
 type RuntimeNeuralConfig struct {
-	Profile      string
-	EmbeddingURL string
-	RerankerURL  string
-	NLIURL       string
-	SLMURL       string
-	SLMModel     string
-	SLMProtocol  string
-	SLMTimeout   time.Duration
+	Profile                   string
+	EmbeddingURL              string
+	RerankerURL               string
+	NLIURL                    string
+	SLMURL                    string
+	SLMModel                  string
+	SLMProtocol               string
+	SLMTimeout                time.Duration
+	REMPauseRerankerContainer string
 }
 
 type configPathCtxKey struct{}
@@ -107,14 +109,15 @@ func ResolveRuntimeNeuralConfig(configPath string) RuntimeNeuralConfig {
 	slmProtocol := resolveSLMProtocol(os.Getenv("ROMERO_SLM_PROTOCOL"), rawSLM)
 
 	return RuntimeNeuralConfig{
-		Profile:      profile,
-		EmbeddingURL: normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_BGE_M3_URL"), profCfg.EmbeddingEndpoint), "/embed", "/api/embeddings"),
-		RerankerURL:  normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_RERANKER_URL"), profCfg.RerankerEndpoint), "/rerank"),
-		NLIURL:       normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_NLI_URL"), profCfg.NLIEndpoint), "/nli"),
-		SLMURL:       normalizeEndpointBase(rawSLM, "/consolidate", "/api/generate"),
-		SLMModel:     strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_SLM_MODEL"), profCfg.SLMREMModel)),
-		SLMProtocol:  slmProtocol,
-		SLMTimeout:   resolveSLMTimeout(os.Getenv("ROMERO_SLM_TIMEOUT")),
+		Profile:                   profile,
+		EmbeddingURL:              normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_BGE_M3_URL"), profCfg.EmbeddingEndpoint), "/embed", "/api/embeddings"),
+		RerankerURL:               normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_RERANKER_URL"), profCfg.RerankerEndpoint), "/rerank"),
+		NLIURL:                    normalizeEndpointBase(firstNonEmpty(os.Getenv("ROMERO_NLI_URL"), profCfg.NLIEndpoint), "/nli"),
+		SLMURL:                    normalizeEndpointBase(rawSLM, "/consolidate", "/api/generate"),
+		SLMModel:                  strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_SLM_MODEL"), profCfg.SLMREMModel)),
+		SLMProtocol:               slmProtocol,
+		SLMTimeout:                resolveSLMTimeout(os.Getenv("ROMERO_SLM_TIMEOUT")),
+		REMPauseRerankerContainer: strings.TrimSpace(firstNonEmpty(os.Getenv("ROMERO_REM_PAUSE_RERANKER_CONTAINER"), profCfg.REMPauseRerankerContainer)),
 	}
 }
 
