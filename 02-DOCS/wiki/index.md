@@ -82,3 +82,6 @@ Integración de GitHub Issues y skills Matt/rsc: [contrato de flujo](../../../do
 
 
 
+
+- [Delegación automática Antigravity/Vibe](ftd/antigravity-vibe-delegation.md) · [Protocolo](../../../docs/agents/vibe-delegation.md)
+- [Fix REM VRAM (Opción 2) y colisiones en commitClusterTx (#82)](ftd/rem-vram-and-topic-key.md)

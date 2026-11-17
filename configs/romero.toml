@@ -39,6 +39,7 @@ nli_mode = "realtime_and_worker"
 enable_rem_consolidation = true
 rem_idle_trigger_seconds = 120
 rem_unload_slm_immediately = true
+rem_pause_reranker_container = "romero-reranker"
 embedding_endpoint = "http://127.0.0.1:8081/embed"
 reranker_endpoint = "http://127.0.0.1:8082/rerank"
 nli_endpoint = "http://127.0.0.1:8083/nli"

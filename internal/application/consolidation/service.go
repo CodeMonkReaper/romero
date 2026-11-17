@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -45,14 +46,22 @@ type ConsolidateResult struct {
 
 // Service orchestrates REM sleep consolidation under PowerGovernor preemption.
 type Service struct {
-	uow      memory.UnitOfWork
-	repo     memory.ConsolidationRepository
-	slm      memory.SLMConsolidationProvider
-	nli      memory.NLIProvider
-	audit    memory.AuditLogger
-	l1       memory.GraphMutationNotifier
-	governor *governor.PowerGovernor
-	clock    func() time.Time
+	uow       memory.UnitOfWork
+	repo      memory.ConsolidationRepository
+	slm       memory.SLMConsolidationProvider
+	nli       memory.NLIProvider
+	audit     memory.AuditLogger
+	l1        memory.GraphMutationNotifier
+	governor  *governor.PowerGovernor
+	clock     func() time.Time
+	beforeREM func(context.Context) error
+	afterREM  func(context.Context) error
+}
+
+// SetREMLifecycleHooks registers optional pre/post-REM hooks (e.g. pausing a GPU reranker container).
+func (s *Service) SetREMLifecycleHooks(before, after func(context.Context) error) {
+	s.beforeREM = before
+	s.afterREM = after
 }
 
 // NewService constructs a consolidation.Service.
@@ -158,10 +167,27 @@ func (s *Service) runConsolidate(
 	if cmd.DryRun || len(clusters) == 0 || s.slm == nil || s.nli == nil {
 		return nil
 	}
+	if s.beforeREM != nil {
+		if err := s.beforeREM(remCtx); err != nil {
+			if remCtx.Err() != nil {
+				res.Preempted = true
+				return remCtx.Err()
+			}
+			return fmt.Errorf("%w: before REM hook: %v", ErrOperational, err)
+		}
+	}
 	defer func() {
 		unloadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 		_ = s.slm.UnloadVRAM(unloadCtx)
+		cancel()
+
+		if s.afterREM != nil {
+			restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 45*time.Second)
+			if err := s.afterREM(restoreCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: after REM hook failed: %v\n", err)
+			}
+			restoreCancel()
+		}
 	}()
 
 	verifiedMems, err := s.repo.ListActiveVerifiedByProject(remCtx, auth.TenantID, cmd.ProjectID, now)
@@ -347,6 +373,16 @@ func (s *Service) commitClusterTx(
 			return err
 		}
 
+		if newMem.TopicKey != "" {
+			existing, lockErr := reg.Memories().LockActiveTopicMemory(ctx, cluster.ScopeTarget, newMem.TopicKey)
+			if lockErr != nil && !errors.Is(lockErr, memory.ErrNotFound) {
+				return lockErr
+			}
+			if lockErr == nil && existing != nil {
+				newMem.TopicKey = disambiguateTopicKey(newMem.TopicKey, newID)
+			}
+		}
+
 		if err := reg.Memories().InsertMemory(ctx, newMem); err != nil {
 			return err
 		}
@@ -355,6 +391,12 @@ func (s *Service) commitClusterTx(
 		}
 
 		for _, ep := range cluster.Episodes {
+			if fresh, getErr := reg.Memories().GetMemoryByID(ctx, auth.TenantID, ep.ID); getErr == nil && fresh != nil {
+				ep = *fresh
+			} else if getErr != nil && !errors.Is(getErr, memory.ErrNotFound) {
+				return getErr
+			}
+
 			rel := memory.MemoryRelation{
 				ID:           uuid.New(),
 				TenantID:     auth.TenantID,
@@ -418,6 +460,15 @@ func (s *Service) commitClusterTx(
 		})
 	})
 	return newMem, derivedRels, consolidatedEps, err
+}
+
+func disambiguateTopicKey(base string, id uuid.UUID) string {
+	suffix := "-rem-" + id.String()[:8]
+	const maxTopicKeyLen = 128
+	if len(base)+len(suffix) > maxTopicKeyLen {
+		base = base[:maxTopicKeyLen-len(suffix)]
+	}
+	return base + suffix
 }
 
 func (s *Service) recordDenied(ctx context.Context, auth identity.AuthContext, cmd ConsolidateCommand, reason string, now time.Time) {

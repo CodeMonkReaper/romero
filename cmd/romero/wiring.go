@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -391,6 +393,7 @@ func openPostgresRuntime(ctx context.Context, dsn string) (*postgresRuntime, err
 		pool.Close()
 		return nil, err
 	}
+	attachREMLifecycleHooks(consSvc, cli.ConfigPathFromContext(ctx))
 
 	mcpSrv, err := mcp.NewServer(mcp.Dependencies{
 		Authenticator: auth,
@@ -912,9 +915,68 @@ func runPostgresConsolidation(ctx context.Context, dsn, rawAPIKey string, projec
 	if err != nil {
 		return nil, err
 	}
+	attachREMLifecycleHooks(consSvc, cli.ConfigPathFromContext(ctx))
 
 	return consSvc.Consolidate(ctx, caller, consolidation.ConsolidateCommand{
 		ProjectID: projectID,
 		DryRun:    dryRun,
 	})
+}
+
+var validDockerContainerName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+func attachREMLifecycleHooks(consSvc *consolidation.Service, configPath string) {
+	if consSvc == nil {
+		return
+	}
+	cfg := cli.ResolveRuntimeNeuralConfig(configPath)
+	container := strings.TrimSpace(cfg.REMPauseRerankerContainer)
+	if container == "" || cfg.Profile != string(governor.ProfileUltra) || !validDockerContainerName.MatchString(container) {
+		return
+	}
+	rerankerBase := strings.TrimRight(strings.TrimSpace(cfg.RerankerURL), "/")
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+
+	before := func(ctx context.Context) error {
+		stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		// #nosec G204 -- container name is validated against validDockerContainerName
+		out, err := exec.CommandContext(stopCtx, "docker", "stop", container).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("docker stop %s: %w (%s)", container, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	after := func(ctx context.Context) error {
+		// #nosec G204 -- container name is validated against validDockerContainerName
+		if out, err := exec.CommandContext(ctx, "docker", "start", container).CombinedOutput(); err != nil {
+			return fmt.Errorf("docker start %s: %w (%s)", container, err, strings.TrimSpace(string(out)))
+		}
+		if rerankerBase == "" {
+			return nil
+		}
+		healthURL := rerankerBase + "/health"
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+			if reqErr == nil {
+				resp, respErr := httpClient.Do(req)
+				if respErr == nil {
+					_ = resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						return nil
+					}
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+		}
+	}
+
+	consSvc.SetREMLifecycleHooks(before, after)
 }
