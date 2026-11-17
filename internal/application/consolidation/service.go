@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -182,7 +183,9 @@ func (s *Service) runConsolidate(
 
 		if s.afterREM != nil {
 			restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 45*time.Second)
-			_ = s.afterREM(restoreCtx)
+			if err := s.afterREM(restoreCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: after REM hook failed: %v\n", err)
+			}
 			restoreCancel()
 		}
 	}()
